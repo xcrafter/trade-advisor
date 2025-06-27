@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -34,7 +33,6 @@ export default function CalendarView({ onSessionSelect }: CalendarViewProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [mounted, setMounted] = useState(false);
@@ -71,7 +69,6 @@ export default function CalendarView({ onSessionSelect }: CalendarViewProps) {
       // Show create session dialog for new dates
       setSelectedDate(date);
       setTitle(`Trading Session - ${date.toLocaleDateString()}`);
-      setDescription(`Stock analysis session for ${date.toLocaleDateString()}`);
       setShowCreateDialog(true);
     }
   };
@@ -94,7 +91,6 @@ export default function CalendarView({ onSessionSelect }: CalendarViewProps) {
           title:
             title.trim() ||
             `Trading Session - ${selectedDate.toLocaleDateString()}`,
-          description: description.trim(),
         }),
       });
 
@@ -103,7 +99,6 @@ export default function CalendarView({ onSessionSelect }: CalendarViewProps) {
         setSessions((prev) => [newSession, ...prev]);
         setShowCreateDialog(false);
         setTitle("");
-        setDescription("");
         onSessionSelect(newSession.id, selectedDate);
       } else {
         const errorData = await response.json();
@@ -119,7 +114,6 @@ export default function CalendarView({ onSessionSelect }: CalendarViewProps) {
   const handleDialogClose = () => {
     setShowCreateDialog(false);
     setTitle("");
-    setDescription("");
     setError("");
     setSelectedDate(null);
   };
@@ -443,26 +437,6 @@ export default function CalendarView({ onSessionSelect }: CalendarViewProps) {
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Enter a descriptive title for your session"
                 className="text-base p-4 border-2 focus:border-blue-500 rounded-xl"
-              />
-            </div>
-
-            <div className="grid gap-3">
-              <Label
-                htmlFor="description"
-                className="text-base font-semibold text-slate-700 dark:text-slate-200"
-              >
-                Description{" "}
-                <span className="text-slate-400 font-normal">(Optional)</span>
-              </Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                  setDescription(e.target.value)
-                }
-                placeholder="Add notes about your trading strategy, goals, or market outlook..."
-                rows={4}
-                className="text-base p-4 border-2 focus:border-blue-500 rounded-xl resize-none"
               />
             </div>
           </div>

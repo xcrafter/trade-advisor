@@ -77,6 +77,7 @@ export default function StockDashboard({
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [showAddDialog, setShowAddDialog] = useState(false);
 
   // View settings state
   const [viewSettings, setViewSettings] = useState<ViewSettings>({
@@ -168,6 +169,12 @@ export default function StockDashboard({
         const newStock = await response.json();
         setStocks((prev) => [newStock, ...prev]);
         setNewSymbol("");
+        setShowAddDialog(false);
+
+        // Automatically analyze the newly added stock
+        setTimeout(() => {
+          analyzeStock(newStock.id);
+        }, 500);
       } else {
         const errorData = await response.json();
         setError(errorData.error || "Failed to add stock");
@@ -383,282 +390,304 @@ export default function StockDashboard({
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
       <div className="container mx-auto max-w-[1600px] p-6">
-        {/* Enhanced Header */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl mb-8 p-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <Button
-                variant="outline"
-                onClick={onBackToCalendar}
-                className="rounded-full w-12 h-12 p-0 shadow-md hover:shadow-lg transition-all"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
+        {/* Simple Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-6">
+            <Button
+              variant="outline"
+              onClick={onBackToCalendar}
+              className="rounded-full w-12 h-12 p-0 shadow-md hover:shadow-lg transition-all"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
 
-              <div>
-                <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
-                  {session?.title || "Trading Session"}
-                </h1>
-                <p className="text-slate-600 dark:text-slate-300 text-lg">
-                  {new Date(sessionDate).toLocaleDateString("en-US", {
-                    weekday: "long",
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  })}
-                </p>
-                {session?.description && (
-                  <p className="text-slate-500 dark:text-slate-400 mt-1">
-                    {session.description}
-                  </p>
-                )}
-              </div>
+            <div>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                {session?.title || "Trading Session"}
+              </h1>
+              <p className="text-slate-600 dark:text-slate-300 text-lg mt-1">
+                {new Date(sessionDate).toLocaleDateString("en-US", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
             </div>
-
-            {/* View Controls */}
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="lg" className="gap-2">
-                  <Settings className="h-5 w-5" />
-                  View Settings
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px]">
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2">
-                    <Eye className="h-5 w-5" />
-                    Table View Settings
-                  </DialogTitle>
-                  <DialogDescription>
-                    Customize which columns and data to display in the analysis
-                    table
-                  </DialogDescription>
-                </DialogHeader>
-
-                <div className="grid gap-6 py-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-base font-medium">
-                        Basic Indicators (Price, VWAP, RSI)
-                      </Label>
-                      <Button
-                        variant={
-                          viewSettings.showBasicIndicators
-                            ? "default"
-                            : "outline"
-                        }
-                        size="sm"
-                        onClick={() => toggleViewSetting("showBasicIndicators")}
-                      >
-                        {viewSettings.showBasicIndicators ? (
-                          <Eye className="h-4 w-4" />
-                        ) : (
-                          <EyeOff className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <Label className="text-base font-medium">
-                        Advanced Indicators (SMA, EMA, ATR)
-                      </Label>
-                      <Button
-                        variant={
-                          viewSettings.showAdvancedIndicators
-                            ? "default"
-                            : "outline"
-                        }
-                        size="sm"
-                        onClick={() =>
-                          toggleViewSetting("showAdvancedIndicators")
-                        }
-                      >
-                        {viewSettings.showAdvancedIndicators ? (
-                          <Eye className="h-4 w-4" />
-                        ) : (
-                          <EyeOff className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <Label className="text-base font-medium">
-                        Volume Data
-                      </Label>
-                      <Button
-                        variant={
-                          viewSettings.showVolumeData ? "default" : "outline"
-                        }
-                        size="sm"
-                        onClick={() => toggleViewSetting("showVolumeData")}
-                      >
-                        {viewSettings.showVolumeData ? (
-                          <Eye className="h-4 w-4" />
-                        ) : (
-                          <EyeOff className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <Label className="text-base font-medium">
-                        Breakout Signals
-                      </Label>
-                      <Button
-                        variant={
-                          viewSettings.showBreakoutSignals
-                            ? "default"
-                            : "outline"
-                        }
-                        size="sm"
-                        onClick={() => toggleViewSetting("showBreakoutSignals")}
-                      >
-                        {viewSettings.showBreakoutSignals ? (
-                          <Eye className="h-4 w-4" />
-                        ) : (
-                          <EyeOff className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <Label className="text-base font-medium">
-                        Quality Metrics (Score, Clean Setup)
-                      </Label>
-                      <Button
-                        variant={
-                          viewSettings.showQualityMetrics
-                            ? "default"
-                            : "outline"
-                        }
-                        size="sm"
-                        onClick={() => toggleViewSetting("showQualityMetrics")}
-                      >
-                        {viewSettings.showQualityMetrics ? (
-                          <Eye className="h-4 w-4" />
-                        ) : (
-                          <EyeOff className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <Label className="text-base font-medium">
-                        Analysis Opinion (AI/Rule-based)
-                      </Label>
-                      <Button
-                        variant={
-                          viewSettings.showInsights ? "default" : "outline"
-                        }
-                        size="sm"
-                        onClick={() => toggleViewSetting("showInsights")}
-                      >
-                        {viewSettings.showInsights ? (
-                          <Eye className="h-4 w-4" />
-                        ) : (
-                          <EyeOff className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <Label className="text-base font-medium">
-                        Trading Plan (Entry/Target/Stop Loss)
-                      </Label>
-                      <Button
-                        variant={
-                          viewSettings.showTradingPlan ? "default" : "outline"
-                        }
-                        size="sm"
-                        onClick={() => toggleViewSetting("showTradingPlan")}
-                      >
-                        {viewSettings.showTradingPlan ? (
-                          <Eye className="h-4 w-4" />
-                        ) : (
-                          <EyeOff className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <Label className="text-base font-medium">
-                        Compact View
-                      </Label>
-                      <Button
-                        variant={
-                          viewSettings.compactView ? "default" : "outline"
-                        }
-                        size="sm"
-                        onClick={() => toggleViewSetting("compactView")}
-                      >
-                        {viewSettings.compactView ? "Dense" : "Spacious"}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
           </div>
-        </div>
 
-        {/* Add Stock Section */}
-        <Card className="mb-8 shadow-lg">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Plus className="h-5 w-5" />
-              Add Stock Symbol
-            </CardTitle>
-            <CardDescription>
-              Add stock symbols to analyze for this trading session
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-4">
-              <Input
-                placeholder="Enter stock symbol (e.g., RELIANCE, INFY)"
-                value={newSymbol}
-                onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
-                onKeyPress={(e) => e.key === "Enter" && addStock(e)}
-                className="flex-1"
-              />
-              <Button
-                onClick={addStock}
-                disabled={loading || !newSymbol.trim()}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Adding...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Stock
-                  </>
-                )}
+          {/* Add Stock Button */}
+          <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+            <DialogTrigger asChild>
+              <Button size="lg" className="gap-2 bg-blue-600 hover:bg-blue-700">
+                <Plus className="h-5 w-5" />
+                Add Stock
               </Button>
-            </div>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Plus className="h-5 w-5" />
+                  Add Stock Symbol
+                </DialogTitle>
+                <DialogDescription>
+                  Add a stock symbol to analyze for this trading session. It
+                  will be analyzed automatically.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={addStock} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="symbol">Stock Symbol</Label>
+                  <Input
+                    id="symbol"
+                    placeholder="Enter stock symbol (e.g., RELIANCE, INFY)"
+                    value={newSymbol}
+                    onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
+                    className="w-full"
+                  />
+                </div>
 
-            {error && (
-              <Alert variant="destructive" className="mt-4">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-          </CardContent>
-        </Card>
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+
+                <div className="flex justify-end gap-3">
+                  <DialogTrigger asChild>
+                    <Button type="button" variant="outline">
+                      Cancel
+                    </Button>
+                  </DialogTrigger>
+                  <Button
+                    type="submit"
+                    disabled={loading || !newSymbol.trim()}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Adding...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add & Analyze
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
 
         {/* Enhanced Analysis Table */}
         <Card className="shadow-xl">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="h-6 w-6" />
-              Stock Analysis Results
-            </CardTitle>
-            <CardDescription>
-              Comprehensive technical analysis with advanced indicators and
-              AI-powered signals
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-6 w-6" />
+                  Stock Analysis Results
+                </CardTitle>
+                <CardDescription>
+                  Comprehensive technical analysis with advanced indicators and
+                  AI-powered signals
+                </CardDescription>
+              </div>
+
+              {/* View Settings Button */}
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2">
+                    <Settings className="h-4 w-4" />
+                    View Settings
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px]">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <Eye className="h-5 w-5" />
+                      Table View Settings
+                    </DialogTitle>
+                    <DialogDescription>
+                      Customize which columns and data to display in the
+                      analysis table
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="grid gap-6 py-6">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-base font-medium">
+                          Basic Indicators (Price, VWAP, RSI)
+                        </Label>
+                        <Button
+                          variant={
+                            viewSettings.showBasicIndicators
+                              ? "default"
+                              : "outline"
+                          }
+                          size="sm"
+                          onClick={() =>
+                            toggleViewSetting("showBasicIndicators")
+                          }
+                        >
+                          {viewSettings.showBasicIndicators ? (
+                            <Eye className="h-4 w-4" />
+                          ) : (
+                            <EyeOff className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <Label className="text-base font-medium">
+                          Advanced Indicators (SMA, EMA, ATR)
+                        </Label>
+                        <Button
+                          variant={
+                            viewSettings.showAdvancedIndicators
+                              ? "default"
+                              : "outline"
+                          }
+                          size="sm"
+                          onClick={() =>
+                            toggleViewSetting("showAdvancedIndicators")
+                          }
+                        >
+                          {viewSettings.showAdvancedIndicators ? (
+                            <Eye className="h-4 w-4" />
+                          ) : (
+                            <EyeOff className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <Label className="text-base font-medium">
+                          Volume Data
+                        </Label>
+                        <Button
+                          variant={
+                            viewSettings.showVolumeData ? "default" : "outline"
+                          }
+                          size="sm"
+                          onClick={() => toggleViewSetting("showVolumeData")}
+                        >
+                          {viewSettings.showVolumeData ? (
+                            <Eye className="h-4 w-4" />
+                          ) : (
+                            <EyeOff className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <Label className="text-base font-medium">
+                          Breakout Signals
+                        </Label>
+                        <Button
+                          variant={
+                            viewSettings.showBreakoutSignals
+                              ? "default"
+                              : "outline"
+                          }
+                          size="sm"
+                          onClick={() =>
+                            toggleViewSetting("showBreakoutSignals")
+                          }
+                        >
+                          {viewSettings.showBreakoutSignals ? (
+                            <Eye className="h-4 w-4" />
+                          ) : (
+                            <EyeOff className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <Label className="text-base font-medium">
+                          Quality Metrics (Score, Clean Setup)
+                        </Label>
+                        <Button
+                          variant={
+                            viewSettings.showQualityMetrics
+                              ? "default"
+                              : "outline"
+                          }
+                          size="sm"
+                          onClick={() =>
+                            toggleViewSetting("showQualityMetrics")
+                          }
+                        >
+                          {viewSettings.showQualityMetrics ? (
+                            <Eye className="h-4 w-4" />
+                          ) : (
+                            <EyeOff className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <Label className="text-base font-medium">
+                          Analysis Opinion (AI/Rule-based)
+                        </Label>
+                        <Button
+                          variant={
+                            viewSettings.showInsights ? "default" : "outline"
+                          }
+                          size="sm"
+                          onClick={() => toggleViewSetting("showInsights")}
+                        >
+                          {viewSettings.showInsights ? (
+                            <Eye className="h-4 w-4" />
+                          ) : (
+                            <EyeOff className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <Label className="text-base font-medium">
+                          Trading Plan (Entry/Target/Stop Loss)
+                        </Label>
+                        <Button
+                          variant={
+                            viewSettings.showTradingPlan ? "default" : "outline"
+                          }
+                          size="sm"
+                          onClick={() => toggleViewSetting("showTradingPlan")}
+                        >
+                          {viewSettings.showTradingPlan ? (
+                            <Eye className="h-4 w-4" />
+                          ) : (
+                            <EyeOff className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <Label className="text-base font-medium">
+                          Compact View
+                        </Label>
+                        <Button
+                          variant={
+                            viewSettings.compactView ? "default" : "outline"
+                          }
+                          size="sm"
+                          onClick={() => toggleViewSetting("compactView")}
+                        >
+                          {viewSettings.compactView ? "Dense" : "Spacious"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
           </CardHeader>
           <CardContent>
             {stocks.length === 0 ? (
