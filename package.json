@@ -8,7 +8,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "db:setup": "echo 'Please run the SQL schema from database/schema.sql in your Supabase SQL editor'"
+    "db:setup": "echo 'Please run the SQL schema from database/schema.sql in your Supabase SQL editor'",
+    "convert-upstox": "node scripts/convert-upstox-instruments.js",
+    "migrate-instruments": "node scripts/migrate-instruments-to-db.js"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.14",
@@ -20,7 +22,9 @@
     "axios": "^1.10.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
+    "dotenv": "^16.6.0",
     "lucide-react": "^0.523.0",
     "next": "15.3.4",
     "react": "^19.0.0",

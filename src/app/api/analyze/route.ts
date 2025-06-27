@@ -17,15 +17,7 @@ interface UpstoxCandle {
   volume: number;
 }
 
-// Twelvedata interface
-interface TwelvedataCandle {
-  datetime: string;
-  open: string;
-  high: string;
-  low: string;
-  close: string;
-  volume: string;
-}
+// Removed TwelvedataCandle interface as we're now using Upstox API
 
 interface AdvancedTechnicalIndicators {
   symbol: string;
@@ -316,61 +308,64 @@ async function shouldRefreshData(
 }
 
 // Twelvedata data fetching (primary source)
-async function fetchTwelvedataCandles(symbol: string): Promise<UpstoxCandle[]> {
+async function fetchUpstoxCandles(
+  instrumentKey: string
+): Promise<UpstoxCandle[]> {
   try {
-    const apiKey = process.env.TWELVEDATA_API_KEY;
-    console.log(`Twelvedata API key status: ${apiKey ? "Found" : "Not found"}`);
+    const apiKey = process.env.UPSTOX_API_KEY;
+    console.log(`Upstox API key status: ${apiKey ? "Found" : "Not found"}`);
     console.log(`API key length: ${apiKey ? apiKey.length : 0}`);
 
     if (!apiKey) {
-      console.log("Twelvedata API key not found, using mock data");
+      console.log("Upstox API key not found, using mock data");
       console.log(
         "Available env keys:",
-        Object.keys(process.env).filter((key) => key.includes("TWELVE"))
+        Object.keys(process.env).filter((key) => key.includes("UPSTOX"))
       );
-      return generateAdvancedMockCandles(symbol);
+      return generateAdvancedMockCandles(instrumentKey);
     }
 
-    console.log(`Attempting to fetch data from Twelvedata for ${symbol}`);
+    console.log(`Attempting to fetch data from Upstox for ${instrumentKey}`);
 
-    // Fetch 1-minute data using plain symbol with exchange parameter
-    const response = await axios.get(`https://api.twelvedata.com/time_series`, {
-      params: {
-        symbol: symbol,
-        interval: "1min",
-        outputsize: 200, // Get 200 data points (about 3+ hours)
-        apikey: apiKey,
-        format: "JSON",
-      },
-      timeout: 15000,
-    });
+    // Fetch 1-minute intraday data from Upstox API
+    const response = await axios.get(
+      `https://api.upstox.com/v3/historical-candle/intraday/${instrumentKey}/minutes/1`,
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        timeout: 15000,
+      }
+    );
 
-    console.log(`Twelvedata response status:`, response.data.status);
-    console.log(`Twelvedata response keys:`, Object.keys(response.data));
+    console.log(`Upstox response status:`, response.data.status);
+    console.log(`Upstox response keys:`, Object.keys(response.data));
 
     if (
-      response.data.status === "error" ||
-      !response.data.values ||
-      response.data.values.length === 0
+      response.data.status !== "success" ||
+      !response.data.data ||
+      !response.data.data.candles ||
+      response.data.data.candles.length === 0
     ) {
-      console.log("Twelvedata API: No valid data found, using mock data");
+      console.log("Upstox API: No valid data found, using mock data");
       console.log("Response data:", response.data);
-      return generateAdvancedMockCandles(symbol);
+      return generateAdvancedMockCandles(instrumentKey);
     }
 
     console.log(
-      `Successfully fetched ${response.data.values.length} data points from Twelvedata for ${symbol}`
+      `Successfully fetched ${response.data.data.candles.length} data points from Upstox for ${instrumentKey}`
     );
 
-    // Convert Twelvedata format to our standard format
-    const candles: UpstoxCandle[] = response.data.values.map(
-      (candle: TwelvedataCandle) => ({
-        timestamp: candle.datetime,
-        open: parseFloat(candle.open),
-        high: parseFloat(candle.high),
-        low: parseFloat(candle.low),
-        close: parseFloat(candle.close),
-        volume: parseInt(candle.volume) || 0,
+    // Convert Upstox format to our standard format
+    // Upstox candle format: [timestamp, open, high, low, close, volume, oi]
+    const candles: UpstoxCandle[] = response.data.data.candles.map(
+      (candle: [string, number, number, number, number, number, number]) => ({
+        timestamp: candle[0], // ISO timestamp
+        open: candle[1],
+        high: candle[2],
+        low: candle[3],
+        close: candle[4],
+        volume: candle[5],
       })
     );
 
@@ -381,33 +376,35 @@ async function fetchTwelvedataCandles(symbol: string): Promise<UpstoxCandle[]> {
     );
 
     console.log(
-      `Fetched ${candles.length} candles from Twelvedata for ${symbol}`
+      `Fetched ${candles.length} candles from Upstox for ${instrumentKey}`
     );
 
     return candles;
   } catch (error) {
-    console.log("Twelvedata API error, using mock data:", error);
-    return generateAdvancedMockCandles(symbol);
+    console.log("Upstox API error, using mock data:", error);
+    return generateAdvancedMockCandles(instrumentKey);
   }
 }
 
 // Note: Upstox API removed - using Twelvedata as primary source with mock data fallback
 
 // Generate realistic mock data for comprehensive analysis
-function generateAdvancedMockCandles(symbol: string): UpstoxCandle[] {
+function generateAdvancedMockCandles(instrumentKey: string): UpstoxCandle[] {
   const candles: UpstoxCandle[] = [];
   let basePrice = 100 + Math.random() * 500;
 
-  // Add some symbol-specific price ranges
-  const symbolPrices: { [key: string]: number } = {
-    RELIANCE: 2500,
-    INFY: 1800,
-    TCS: 3500,
-    HDFC: 1600,
-    ICICI: 1200,
+  // Use instrument key patterns to determine base prices
+
+  // Add some instrument-specific price ranges based on common patterns
+  const instrumentPrices: { [key: string]: number } = {
+    "NSE_EQ|INE002A01018": 2500, // Reliance
+    "NSE_EQ|INE009A01021": 1800, // Infosys
+    "NSE_EQ|INE467B01029": 3500, // TCS
+    "NSE_EQ|INE040A01034": 1600, // HDFC
+    "NSE_EQ|INE090A01013": 1200, // ICICI
   };
 
-  basePrice = symbolPrices[symbol] || basePrice;
+  basePrice = instrumentPrices[instrumentKey] || basePrice;
 
   // Generate 200 candles (about 3+ hours of 1-minute data)
   for (let i = 0; i < 200; i++) {
@@ -1076,8 +1073,18 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`Fetching fresh market data for ${stock.symbol}`);
-    // Fetch optimized market data
-    const candles = await fetchTwelvedataCandles(stock.symbol);
+
+    // Check if stock has instrument_key
+    if (!stock.instrument_key) {
+      console.error(`Stock ${stock.symbol} has no instrument_key`);
+      return NextResponse.json(
+        { error: "Stock instrument key not found. Please re-add the stock." },
+        { status: 400 }
+      );
+    }
+
+    // Fetch optimized market data using Upstox API
+    const candles = await fetchUpstoxCandles(stock.instrument_key);
 
     if (candles.length === 0) {
       return NextResponse.json(
@@ -1087,8 +1094,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Calculate all advanced technical indicators
-    const prices = candles.map((c) => c.close);
-    const volumes = candles.map((c) => c.volume);
+    const prices = candles.map((c: UpstoxCandle) => c.close);
+    const volumes = candles.map((c: UpstoxCandle) => c.volume);
     const currentPrice = prices[prices.length - 1];
     const currentVolume = volumes[volumes.length - 1];
 

@@ -366,28 +366,16 @@ export default function CalendarView({ onSessionSelect }: CalendarViewProps) {
           </div>
         </div>
 
-        {/* Modern Legend */}
-        <div className="mt-8 flex justify-center">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-6">
-            <div className="flex items-center gap-8 text-sm">
-              <div className="flex items-center gap-3">
-                <div className="w-4 h-4 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full shadow-sm"></div>
-                <span className="text-slate-600 dark:text-slate-300 font-medium">
-                  Trading Session
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-4 h-4 bg-blue-500 rounded-full shadow-sm"></div>
-                <span className="text-slate-600 dark:text-slate-300 font-medium">
-                  Today
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-4 h-4 border-2 border-blue-300 rounded-full"></div>
-                <span className="text-slate-600 dark:text-slate-300 font-medium">
-                  Available Date
-                </span>
-              </div>
+        {/* Subtle Legend - Bottom Right */}
+        <div className="mt-4 flex justify-end">
+          <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full"></div>
+              <span>Session</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+              <span>Today</span>
             </div>
           </div>
         </div>

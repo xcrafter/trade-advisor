@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 
 export async function POST(request: NextRequest) {
   try {
-    const { symbol, sessionId } = await request.json();
+    const { symbol, sessionId, instrumentKey } = await request.json();
 
     if (!symbol || typeof symbol !== "string") {
       return NextResponse.json(
@@ -15,6 +15,13 @@ export async function POST(request: NextRequest) {
     if (!sessionId) {
       return NextResponse.json(
         { error: "Session ID is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!instrumentKey || typeof instrumentKey !== "string") {
+      return NextResponse.json(
+        { error: "Instrument key is required and must be a string" },
         { status: 400 }
       );
     }
@@ -41,6 +48,7 @@ export async function POST(request: NextRequest) {
         {
           session_id: sessionId,
           symbol: symbol.toUpperCase(),
+          instrument_key: instrumentKey,
         },
       ])
       .select(

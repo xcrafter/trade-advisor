@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import StockAutocomplete from "@/components/StockAutocomplete";
 import {
   Card,
   CardContent,
@@ -34,8 +34,10 @@ import {
   BarChart3,
   Target,
   Zap,
-  Trash2,
   Clock,
+  CheckSquare,
+  Square,
+  Trash,
 } from "lucide-react";
 import { Stock, Signal, Session } from "@/lib/supabase";
 import {
@@ -74,10 +76,16 @@ export default function StockDashboard({
   const [signals, setSignals] = useState<Signal[]>([]);
   const [session, setSession] = useState<Session | null>(null);
   const [newSymbol, setNewSymbol] = useState("");
+  const [selectedStock, setSelectedStock] = useState<{
+    symbol: string;
+    instrumentKey: string;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [selectedStocks, setSelectedStocks] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // View settings state
   const [viewSettings, setViewSettings] = useState<ViewSettings>({
@@ -148,7 +156,7 @@ export default function StockDashboard({
 
   const addStock = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSymbol.trim()) return;
+    if (!newSymbol.trim() || !selectedStock?.instrumentKey) return;
 
     setLoading(true);
     setError("");
@@ -162,6 +170,7 @@ export default function StockDashboard({
         body: JSON.stringify({
           symbol: newSymbol.trim(),
           sessionId,
+          instrumentKey: selectedStock.instrumentKey,
         }),
       });
 
@@ -169,6 +178,7 @@ export default function StockDashboard({
         const newStock = await response.json();
         setStocks((prev) => [newStock, ...prev]);
         setNewSymbol("");
+        setSelectedStock(null);
         setShowAddDialog(false);
 
         // Automatically analyze the newly added stock
@@ -223,39 +233,72 @@ export default function StockDashboard({
     }
   };
 
-  const deleteStock = async (stockId: string, symbol: string) => {
-    if (
-      !confirm(
-        `Are you sure you want to delete ${symbol}? This will also remove all associated analysis data.`
-      )
-    ) {
-      return;
-    }
+  // Handle individual row selection
+  const toggleRowSelection = (stockId: string) => {
+    setSelectedStocks((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(stockId)) {
+        newSet.delete(stockId);
+      } else {
+        newSet.add(stockId);
+      }
+      return newSet;
+    });
+  };
 
+  // Handle select all/none
+  const toggleSelectAll = () => {
+    if (selectedStocks.size === stocks.length) {
+      setSelectedStocks(new Set());
+    } else {
+      setSelectedStocks(new Set(stocks.map((stock) => stock.id)));
+    }
+  };
+
+  // Handle bulk delete
+  const deleteSelectedStocks = async () => {
+    if (selectedStocks.size === 0) return;
+
+    const stocksToDelete = stocks.filter((stock) =>
+      selectedStocks.has(stock.id)
+    );
+    const stockNames = stocksToDelete.map((stock) => stock.symbol).join(", ");
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${selectedStocks.size} stock(s) (${stockNames})? This will remove all analysis data for these stocks.`
+    );
+
+    if (!confirmed) return;
+
+    setIsDeleting(true);
     setError("");
 
     try {
-      const response = await fetch(
-        `/api/stocks?stockId=${stockId}&sessionId=${sessionId}`,
-        {
+      const deletePromises = Array.from(selectedStocks).map((stockId) =>
+        fetch(`/api/stocks?stockId=${stockId}&sessionId=${sessionId}`, {
           method: "DELETE",
-        }
+        })
       );
 
-      if (response.ok) {
-        // Remove stock from local state
-        setStocks((prev) => prev.filter((stock) => stock.id !== stockId));
+      const responses = await Promise.all(deletePromises);
+      const failedDeletes = responses.filter((response) => !response.ok);
 
-        // Remove associated signals from local state
-        setSignals((prev) =>
-          prev.filter((signal) => signal.stock_id !== stockId)
+      if (failedDeletes.length === 0) {
+        // All deletes successful
+        setStocks((prev) =>
+          prev.filter((stock) => !selectedStocks.has(stock.id))
         );
+        setSignals((prev) =>
+          prev.filter((signal) => !selectedStocks.has(signal.stock_id))
+        );
+        setSelectedStocks(new Set());
       } else {
-        const errorData = await response.json();
-        setError(errorData.error || "Failed to delete stock");
+        setError(`Failed to delete ${failedDeletes.length} stock(s)`);
       }
     } catch {
-      setError("Failed to delete stock");
+      setError("Failed to delete selected stocks");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -435,14 +478,43 @@ export default function StockDashboard({
                   will be analyzed automatically.
                 </DialogDescription>
               </DialogHeader>
-              <form onSubmit={addStock} className="space-y-4">
+              <form
+                id="add-stock-form"
+                onSubmit={addStock}
+                className="space-y-4"
+              >
                 <div className="space-y-2">
                   <Label htmlFor="symbol">Stock Symbol</Label>
-                  <Input
-                    id="symbol"
-                    placeholder="Enter stock symbol (e.g., RELIANCE, INFY)"
+                  <StockAutocomplete
                     value={newSymbol}
-                    onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
+                    onChange={(symbol, stock) => {
+                      setNewSymbol(symbol);
+                      if (stock) {
+                        setSelectedStock({
+                          symbol: stock.symbol,
+                          instrumentKey: stock.instrument_key,
+                        });
+                      } else {
+                        setSelectedStock(null);
+                      }
+                    }}
+                    onSelect={(stock) => {
+                      setNewSymbol(stock.symbol);
+                      setSelectedStock({
+                        symbol: stock.symbol,
+                        instrumentKey: stock.instrument_key,
+                      });
+                      // Auto-submit when stock is selected
+                      setTimeout(() => {
+                        const form = document.getElementById(
+                          "add-stock-form"
+                        ) as HTMLFormElement;
+                        if (form) {
+                          form.requestSubmit();
+                        }
+                      }, 100);
+                    }}
+                    placeholder="Search by symbol or company name..."
                     className="w-full"
                   />
                 </div>
@@ -462,7 +534,11 @@ export default function StockDashboard({
                   </DialogTrigger>
                   <Button
                     type="submit"
-                    disabled={loading || !newSymbol.trim()}
+                    disabled={
+                      loading ||
+                      !newSymbol.trim() ||
+                      !selectedStock?.instrumentKey
+                    }
                     className="bg-blue-600 hover:bg-blue-700"
                   >
                     {loading ? (
@@ -701,316 +777,394 @@ export default function StockDashboard({
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table className="min-w-full">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="font-semibold min-w-[100px]">
-                        Symbol
-                      </TableHead>
+              <>
+                {/* Bulk Actions */}
+                {stocks.length > 0 && (
+                  <div className="flex items-center justify-between mb-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border">
+                    <div className="flex items-center gap-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={toggleSelectAll}
+                        className="gap-2"
+                      >
+                        {selectedStocks.size === stocks.length ? (
+                          <CheckSquare className="h-4 w-4" />
+                        ) : (
+                          <Square className="h-4 w-4" />
+                        )}
+                        {selectedStocks.size === stocks.length
+                          ? "Deselect All"
+                          : "Select All"}
+                      </Button>
 
-                      {viewSettings.showBasicIndicators && (
-                        <>
-                          <TableHead className="font-semibold min-w-[100px]">
-                            Price
-                          </TableHead>
-                          <TableHead className="font-semibold min-w-[100px]">
-                            VWAP
-                          </TableHead>
-                          <TableHead className="font-semibold min-w-[80px]">
-                            RSI(14)
-                          </TableHead>
-                        </>
+                      {selectedStocks.size > 0 && (
+                        <span className="text-sm text-slate-600 dark:text-slate-400">
+                          {selectedStocks.size} of {stocks.length} selected
+                        </span>
                       )}
+                    </div>
 
-                      {viewSettings.showAdvancedIndicators && (
-                        <>
-                          <TableHead className="font-semibold min-w-[100px]">
-                            SMA(20)
-                          </TableHead>
-                          <TableHead className="font-semibold min-w-[100px]">
-                            EMA(9)
-                          </TableHead>
-                          <TableHead className="font-semibold min-w-[80px]">
-                            ATR(14)
-                          </TableHead>
-                        </>
-                      )}
+                    {selectedStocks.size > 0 && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={deleteSelectedStocks}
+                        disabled={isDeleting}
+                        className="gap-2"
+                      >
+                        {isDeleting ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash className="h-4 w-4" />
+                        )}
+                        Delete Selected ({selectedStocks.size})
+                      </Button>
+                    )}
+                  </div>
+                )}
 
-                      {viewSettings.showVolumeData && (
+                <div className="overflow-x-auto">
+                  <Table className="min-w-full">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[50px] sticky left-0 z-10 bg-background border-r">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={toggleSelectAll}
+                            className="p-0 h-auto"
+                          >
+                            {selectedStocks.size === stocks.length &&
+                            stocks.length > 0 ? (
+                              <CheckSquare className="h-4 w-4" />
+                            ) : (
+                              <Square className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </TableHead>
+                        <TableHead className="font-semibold min-w-[120px] sticky left-[50px] z-10 bg-background border-r">
+                          Symbol
+                        </TableHead>
+
+                        {viewSettings.showBasicIndicators && (
+                          <>
+                            <TableHead className="font-semibold min-w-[100px]">
+                              Price
+                            </TableHead>
+                            <TableHead className="font-semibold min-w-[100px]">
+                              VWAP
+                            </TableHead>
+                            <TableHead className="font-semibold min-w-[80px]">
+                              RSI(14)
+                            </TableHead>
+                          </>
+                        )}
+
+                        {viewSettings.showAdvancedIndicators && (
+                          <>
+                            <TableHead className="font-semibold min-w-[100px]">
+                              SMA(20)
+                            </TableHead>
+                            <TableHead className="font-semibold min-w-[100px]">
+                              EMA(9)
+                            </TableHead>
+                            <TableHead className="font-semibold min-w-[80px]">
+                              ATR(14)
+                            </TableHead>
+                          </>
+                        )}
+
+                        {viewSettings.showVolumeData && (
+                          <TableHead className="font-semibold min-w-[120px]">
+                            Volume
+                          </TableHead>
+                        )}
+
                         <TableHead className="font-semibold min-w-[120px]">
-                          Volume
+                          Trend
                         </TableHead>
-                      )}
 
-                      <TableHead className="font-semibold min-w-[120px]">
-                        Trend
-                      </TableHead>
+                        {viewSettings.showBreakoutSignals && (
+                          <TableHead className="font-semibold min-w-[120px]">
+                            Breakouts
+                          </TableHead>
+                        )}
 
-                      {viewSettings.showBreakoutSignals && (
-                        <TableHead className="font-semibold min-w-[120px]">
-                          Breakouts
+                        {viewSettings.showQualityMetrics && (
+                          <>
+                            <TableHead className="font-semibold min-w-[80px]">
+                              Score
+                            </TableHead>
+                            <TableHead className="font-semibold min-w-[80px]">
+                              Setup
+                            </TableHead>
+                          </>
+                        )}
+
+                        <TableHead className="font-semibold min-w-[100px]">
+                          Signal
                         </TableHead>
-                      )}
 
-                      {viewSettings.showQualityMetrics && (
-                        <>
-                          <TableHead className="font-semibold min-w-[80px]">
-                            Score
-                          </TableHead>
-                          <TableHead className="font-semibold min-w-[80px]">
-                            Setup
-                          </TableHead>
-                        </>
-                      )}
-
-                      <TableHead className="font-semibold min-w-[100px]">
-                        Signal
-                      </TableHead>
-
-                      <TableHead className="font-semibold min-w-[80px]">
-                        Direction
-                      </TableHead>
-
-                      {viewSettings.showInsights && (
-                        <TableHead className="font-semibold min-w-[350px]">
-                          Analysis Opinion
+                        <TableHead className="font-semibold min-w-[80px]">
+                          Direction
                         </TableHead>
-                      )}
 
-                      {viewSettings.showTradingPlan && (
-                        <>
-                          <TableHead className="font-semibold min-w-[100px]">
-                            Entry Price
+                        {viewSettings.showInsights && (
+                          <TableHead className="font-semibold min-w-[350px]">
+                            Analysis Opinion
                           </TableHead>
-                          <TableHead className="font-semibold min-w-[100px]">
-                            Target
-                          </TableHead>
-                          <TableHead className="font-semibold min-w-[100px]">
-                            Stop Loss
-                          </TableHead>
-                          <TableHead className="font-semibold min-w-[400px]">
-                            Trading Plan
-                          </TableHead>
-                        </>
-                      )}
+                        )}
 
-                      <TableHead className="font-semibold min-w-[160px]">
-                        Actions
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {stocks.map((stock) => {
-                      const latestSignal = signals.find(
-                        (s) => s.stock_id === stock.id
-                      );
-                      const isAnalyzing = analyzing === stock.id;
+                        {viewSettings.showTradingPlan && (
+                          <>
+                            <TableHead className="font-semibold min-w-[100px]">
+                              Entry Price
+                            </TableHead>
+                            <TableHead className="font-semibold min-w-[100px]">
+                              Target
+                            </TableHead>
+                            <TableHead className="font-semibold min-w-[100px]">
+                              Stop Loss
+                            </TableHead>
+                            <TableHead className="font-semibold min-w-[400px]">
+                              Trading Plan
+                            </TableHead>
+                          </>
+                        )}
 
-                      return (
-                        <TableRow
-                          key={stock.id}
-                          className={viewSettings.compactView ? "h-12" : "h-16"}
-                        >
-                          <TableCell className="font-bold text-lg">
-                            {stock.symbol}
-                          </TableCell>
+                        <TableHead className="font-semibold min-w-[160px]">
+                          Actions
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {stocks.map((stock) => {
+                        const latestSignal = signals.find(
+                          (s) => s.stock_id === stock.id
+                        );
+                        const isAnalyzing = analyzing === stock.id;
 
-                          {viewSettings.showBasicIndicators && (
-                            <>
-                              <TableCell className="font-semibold">
-                                ₹{formatNumber(latestSignal?.price || 0)}
-                              </TableCell>
-                              <TableCell>
-                                ₹{formatNumber(latestSignal?.vwap || 0)}
-                              </TableCell>
-                              <TableCell>
-                                <span
-                                  className={`font-semibold ${
-                                    (latestSignal?.rsi_14 || 0) > 70
-                                      ? "text-red-600"
-                                      : (latestSignal?.rsi_14 || 0) < 30
-                                      ? "text-green-600"
-                                      : "text-slate-600"
-                                  }`}
-                                >
-                                  {formatNumber(latestSignal?.rsi_14 || 0)}
-                                </span>
-                              </TableCell>
-                            </>
-                          )}
-
-                          {viewSettings.showAdvancedIndicators && (
-                            <>
-                              <TableCell>
-                                ₹{formatNumber(latestSignal?.sma_20 || 0)}
-                              </TableCell>
-                              <TableCell>
-                                ₹{formatNumber(latestSignal?.ema_9 || 0)}
-                              </TableCell>
-                              <TableCell>
-                                {formatNumber(latestSignal?.atr_14 || 0)}
-                              </TableCell>
-                            </>
-                          )}
-
-                          {viewSettings.showVolumeData && (
-                            <TableCell>
-                              <div className="flex flex-col">
-                                <span className="font-medium">
-                                  {latestSignal?.volume
-                                    ? formatVolume(latestSignal.volume)
-                                    : "N/A"}
-                                </span>
-                                {latestSignal?.volume_spike && (
-                                  <Badge className="bg-orange-500 text-white text-xs w-fit mt-1">
-                                    <Zap className="h-3 w-3 mr-1" />
-                                    Spike
-                                  </Badge>
-                                )}
-                              </div>
-                            </TableCell>
-                          )}
-
-                          <TableCell>
-                            <Badge
-                              className={
-                                latestSignal?.trend_alignment?.includes(
-                                  "bullish"
-                                )
-                                  ? "bg-green-500 text-white"
-                                  : latestSignal?.trend_alignment?.includes(
-                                      "bearish"
-                                    )
-                                  ? "bg-red-500 text-white"
-                                  : "bg-gray-500 text-white"
-                              }
-                            >
-                              {latestSignal?.trend_alignment?.replace(
-                                "_",
-                                " "
-                              ) || "N/A"}
-                            </Badge>
-                          </TableCell>
-
-                          {viewSettings.showBreakoutSignals && (
-                            <TableCell>
-                              <div className="flex flex-col gap-1">
-                                {getBooleanBadge(
-                                  latestSignal?.breakout_day_high || false,
-                                  "Day High"
-                                )}
-                                {getBooleanBadge(
-                                  latestSignal?.breakout_prev_day_range ||
-                                    false,
-                                  "Prev Range"
-                                )}
-                                {getBooleanBadge(
-                                  latestSignal?.opening_range_breakout || false,
-                                  "OR Break"
-                                )}
-                              </div>
-                            </TableCell>
-                          )}
-
-                          {viewSettings.showQualityMetrics && (
-                            <>
-                              <TableCell>
-                                {latestSignal?.intraday_score ? (
-                                  getIntradayScoreBadge(
-                                    latestSignal.intraday_score
-                                  )
+                        return (
+                          <TableRow
+                            key={stock.id}
+                            className={
+                              viewSettings.compactView ? "h-12" : "h-16"
+                            }
+                          >
+                            <TableCell className="sticky left-0 z-10 bg-background border-r">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => toggleRowSelection(stock.id)}
+                                className="p-0 h-auto"
+                              >
+                                {selectedStocks.has(stock.id) ? (
+                                  <CheckSquare className="h-4 w-4" />
                                 ) : (
-                                  <Badge variant="outline">N/A</Badge>
+                                  <Square className="h-4 w-4" />
                                 )}
-                              </TableCell>
-                              <TableCell>
-                                {getBooleanBadge(
-                                  latestSignal?.clean_setup || false,
-                                  "Clean",
-                                  "Mixed"
-                                )}
-                              </TableCell>
-                            </>
-                          )}
-
-                          <TableCell>
-                            {latestSignal?.signal ? (
-                              getSignalBadge(latestSignal.signal)
-                            ) : (
-                              <Badge variant="outline">Not analyzed</Badge>
-                            )}
-                          </TableCell>
-
-                          <TableCell>
-                            {latestSignal?.direction ? (
-                              <Badge
-                                className={
-                                  latestSignal.direction === "LONG"
-                                    ? "bg-green-500 text-white"
-                                    : "bg-red-500 text-white"
-                                }
-                              >
-                                {latestSignal.direction === "LONG"
-                                  ? "🟢 LONG"
-                                  : "🔴 SHORT"}
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline">N/A</Badge>
-                            )}
-                          </TableCell>
-
-                          {viewSettings.showInsights && (
-                            <TableCell className="max-w-[400px] min-w-[350px]">
-                              <div className="text-sm text-slate-600 dark:text-slate-400 break-words whitespace-normal leading-relaxed">
-                                {latestSignal?.llm_opinion
-                                  ? latestSignal.llm_opinion
-                                  : latestSignal
-                                  ? getInsightsSummary(latestSignal)
-                                  : "No analysis available"}
-                              </div>
+                              </Button>
                             </TableCell>
-                          )}
+                            <TableCell className="font-bold text-lg sticky left-[50px] z-10 bg-background border-r">
+                              {stock.symbol}
+                            </TableCell>
 
-                          {viewSettings.showTradingPlan && (
-                            <>
-                              <TableCell
-                                className={`font-semibold ${
-                                  latestSignal?.direction === "LONG"
-                                    ? "text-green-600"
-                                    : latestSignal?.direction === "SHORT"
-                                    ? "text-red-600"
-                                    : "text-blue-600"
-                                }`}
-                              >
-                                {latestSignal?.buy_price
-                                  ? `₹${formatNumber(latestSignal.buy_price)}`
-                                  : "N/A"}
-                              </TableCell>
-                              <TableCell className="font-semibold text-blue-600">
-                                {latestSignal?.target_price
-                                  ? `₹${formatNumber(
-                                      latestSignal.target_price
-                                    )}`
-                                  : "N/A"}
-                              </TableCell>
-                              <TableCell className="font-semibold text-red-600">
-                                {latestSignal?.stop_loss
-                                  ? `₹${formatNumber(latestSignal.stop_loss)}`
-                                  : "N/A"}
-                              </TableCell>
-                              <TableCell className="max-w-[450px] min-w-[400px]">
-                                <div className="text-sm text-slate-600 dark:text-slate-400 break-words whitespace-pre-line leading-6 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border shadow-sm">
-                                  {formatTradingPlan(
-                                    latestSignal?.trading_plan || ""
+                            {viewSettings.showBasicIndicators && (
+                              <>
+                                <TableCell className="font-semibold">
+                                  ₹{formatNumber(latestSignal?.price || 0)}
+                                </TableCell>
+                                <TableCell>
+                                  ₹{formatNumber(latestSignal?.vwap || 0)}
+                                </TableCell>
+                                <TableCell>
+                                  <span
+                                    className={`font-semibold ${
+                                      (latestSignal?.rsi_14 || 0) > 70
+                                        ? "text-red-600"
+                                        : (latestSignal?.rsi_14 || 0) < 30
+                                        ? "text-green-600"
+                                        : "text-slate-600"
+                                    }`}
+                                  >
+                                    {formatNumber(latestSignal?.rsi_14 || 0)}
+                                  </span>
+                                </TableCell>
+                              </>
+                            )}
+
+                            {viewSettings.showAdvancedIndicators && (
+                              <>
+                                <TableCell>
+                                  ₹{formatNumber(latestSignal?.sma_20 || 0)}
+                                </TableCell>
+                                <TableCell>
+                                  ₹{formatNumber(latestSignal?.ema_9 || 0)}
+                                </TableCell>
+                                <TableCell>
+                                  {formatNumber(latestSignal?.atr_14 || 0)}
+                                </TableCell>
+                              </>
+                            )}
+
+                            {viewSettings.showVolumeData && (
+                              <TableCell>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">
+                                    {latestSignal?.volume
+                                      ? formatVolume(latestSignal.volume)
+                                      : "N/A"}
+                                  </span>
+                                  {latestSignal?.volume_spike && (
+                                    <Badge className="bg-orange-500 text-white text-xs w-fit mt-1">
+                                      <Zap className="h-3 w-3 mr-1" />
+                                      Spike
+                                    </Badge>
                                   )}
                                 </div>
                               </TableCell>
-                            </>
-                          )}
+                            )}
 
-                          <TableCell>
-                            <div className="flex gap-2">
+                            <TableCell>
+                              <Badge
+                                className={
+                                  latestSignal?.trend_alignment?.includes(
+                                    "bullish"
+                                  )
+                                    ? "bg-green-500 text-white"
+                                    : latestSignal?.trend_alignment?.includes(
+                                        "bearish"
+                                      )
+                                    ? "bg-red-500 text-white"
+                                    : "bg-gray-500 text-white"
+                                }
+                              >
+                                {latestSignal?.trend_alignment?.replace(
+                                  "_",
+                                  " "
+                                ) || "N/A"}
+                              </Badge>
+                            </TableCell>
+
+                            {viewSettings.showBreakoutSignals && (
+                              <TableCell>
+                                <div className="flex flex-col gap-1">
+                                  {getBooleanBadge(
+                                    latestSignal?.breakout_day_high || false,
+                                    "Day High"
+                                  )}
+                                  {getBooleanBadge(
+                                    latestSignal?.breakout_prev_day_range ||
+                                      false,
+                                    "Prev Range"
+                                  )}
+                                  {getBooleanBadge(
+                                    latestSignal?.opening_range_breakout ||
+                                      false,
+                                    "OR Break"
+                                  )}
+                                </div>
+                              </TableCell>
+                            )}
+
+                            {viewSettings.showQualityMetrics && (
+                              <>
+                                <TableCell>
+                                  {latestSignal?.intraday_score ? (
+                                    getIntradayScoreBadge(
+                                      latestSignal.intraday_score
+                                    )
+                                  ) : (
+                                    <Badge variant="outline">N/A</Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {getBooleanBadge(
+                                    latestSignal?.clean_setup || false,
+                                    "Clean",
+                                    "Mixed"
+                                  )}
+                                </TableCell>
+                              </>
+                            )}
+
+                            <TableCell>
+                              {latestSignal?.signal ? (
+                                getSignalBadge(latestSignal.signal)
+                              ) : (
+                                <Badge variant="outline">Not analyzed</Badge>
+                              )}
+                            </TableCell>
+
+                            <TableCell>
+                              {latestSignal?.direction ? (
+                                <Badge
+                                  className={
+                                    latestSignal.direction === "LONG"
+                                      ? "bg-green-500 text-white"
+                                      : "bg-red-500 text-white"
+                                  }
+                                >
+                                  {latestSignal.direction === "LONG"
+                                    ? "🟢 LONG"
+                                    : "🔴 SHORT"}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline">N/A</Badge>
+                              )}
+                            </TableCell>
+
+                            {viewSettings.showInsights && (
+                              <TableCell className="max-w-[400px] min-w-[350px]">
+                                <div className="text-sm text-slate-600 dark:text-slate-400 break-words whitespace-normal leading-relaxed">
+                                  {latestSignal?.llm_opinion
+                                    ? latestSignal.llm_opinion
+                                    : latestSignal
+                                    ? getInsightsSummary(latestSignal)
+                                    : "No analysis available"}
+                                </div>
+                              </TableCell>
+                            )}
+
+                            {viewSettings.showTradingPlan && (
+                              <>
+                                <TableCell
+                                  className={`font-semibold ${
+                                    latestSignal?.direction === "LONG"
+                                      ? "text-green-600"
+                                      : latestSignal?.direction === "SHORT"
+                                      ? "text-red-600"
+                                      : "text-blue-600"
+                                  }`}
+                                >
+                                  {latestSignal?.buy_price
+                                    ? `₹${formatNumber(latestSignal.buy_price)}`
+                                    : "N/A"}
+                                </TableCell>
+                                <TableCell className="font-semibold text-blue-600">
+                                  {latestSignal?.target_price
+                                    ? `₹${formatNumber(
+                                        latestSignal.target_price
+                                      )}`
+                                    : "N/A"}
+                                </TableCell>
+                                <TableCell className="font-semibold text-red-600">
+                                  {latestSignal?.stop_loss
+                                    ? `₹${formatNumber(latestSignal.stop_loss)}`
+                                    : "N/A"}
+                                </TableCell>
+                                <TableCell className="max-w-[450px] min-w-[400px]">
+                                  <div className="text-sm text-slate-600 dark:text-slate-400 break-words whitespace-pre-line leading-6 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border shadow-sm">
+                                    {formatTradingPlan(
+                                      latestSignal?.trading_plan || ""
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </>
+                            )}
+
+                            <TableCell>
                               <div className="flex flex-col gap-1">
                                 <Button
                                   onClick={() => analyzeStock(stock.id)}
@@ -1040,25 +1194,14 @@ export default function StockDashboard({
                                   </Badge>
                                 )}
                               </div>
-                              <Button
-                                onClick={() =>
-                                  deleteStock(stock.id, stock.symbol)
-                                }
-                                disabled={isAnalyzing}
-                                size="sm"
-                                variant="destructive"
-                                className="hover:bg-red-600"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
