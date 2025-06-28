@@ -224,10 +224,31 @@ export default function StockDashboard({
         );
       } else {
         const errorData = await response.json();
-        setError(errorData.error || "Analysis failed");
+        // Show detailed error message with alert if available
+        const errorMessage =
+          errorData.alert || errorData.error || "Analysis failed";
+        setError(errorMessage);
+
+        // Show browser alert for critical API configuration issues
+        if (
+          errorData.alert &&
+          (errorData.error?.includes("UPSTOX_API_KEY") ||
+            errorData.error?.includes("OPENAI_API_KEY") ||
+            errorData.error?.includes("Market data unavailable") ||
+            errorData.error?.includes("AI analysis unavailable"))
+        ) {
+          alert(
+            `⚠️ Configuration Issue\n\n${errorData.alert}\n\nDetails: ${
+              errorData.details || errorData.error
+            }`
+          );
+        }
       }
-    } catch {
-      setError("Analysis failed");
+    } catch (error) {
+      const errorMessage =
+        "Analysis failed - Unable to connect to server. Please check your internet connection and try again.";
+      setError(errorMessage);
+      console.error("Analysis error:", error);
     } finally {
       setAnalyzing(null);
     }
@@ -843,8 +864,8 @@ export default function StockDashboard({
                             )}
                           </Button>
                         </TableHead>
-                        <TableHead className="font-semibold min-w-[120px] sticky left-[50px] z-10 bg-background border-r">
-                          Symbol
+                        <TableHead className="font-semibold min-w-[160px] sticky left-[50px] z-10 bg-background border-r">
+                          Symbol & Exchange
                         </TableHead>
 
                         {viewSettings.showBasicIndicators && (
@@ -967,7 +988,17 @@ export default function StockDashboard({
                               </Button>
                             </TableCell>
                             <TableCell className="font-bold text-lg sticky left-[50px] z-10 bg-background border-r">
-                              {stock.symbol}
+                              <div className="flex items-center gap-2">
+                                <span>{stock.symbol}</span>
+                                {stock.exchange && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-200"
+                                  >
+                                    {stock.exchange}
+                                  </Badge>
+                                )}
+                              </div>
                             </TableCell>
 
                             {viewSettings.showBasicIndicators && (

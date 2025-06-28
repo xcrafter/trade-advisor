@@ -311,25 +311,40 @@ async function shouldRefreshData(
 async function fetchUpstoxCandles(
   instrumentKey: string
 ): Promise<UpstoxCandle[]> {
+  const apiKey = process.env.UPSTOX_API_KEY;
+  console.log(`Upstox API key status: ${apiKey ? "Found" : "Not found"}`);
+  console.log(`API key length: ${apiKey ? apiKey.length : 0}`);
+
+  if (!apiKey) {
+    console.error("❌ UPSTOX_API_KEY not found in environment variables");
+    console.log(
+      "Available env keys:",
+      Object.keys(process.env).filter((key) => key.includes("UPSTOX"))
+    );
+    throw new Error(
+      "UPSTOX_API_KEY not configured. Please add your Upstox API key to environment variables."
+    );
+  }
+
   try {
-    const apiKey = process.env.UPSTOX_API_KEY;
-    console.log(`Upstox API key status: ${apiKey ? "Found" : "Not found"}`);
-    console.log(`API key length: ${apiKey ? apiKey.length : 0}`);
-
-    if (!apiKey) {
-      console.log("Upstox API key not found, using mock data");
-      console.log(
-        "Available env keys:",
-        Object.keys(process.env).filter((key) => key.includes("UPSTOX"))
-      );
-      return generateAdvancedMockCandles(instrumentKey);
-    }
-
-    console.log(`Attempting to fetch data from Upstox for ${instrumentKey}`);
+    console.log(
+      `🔄 Fetching real market data from Upstox for ${instrumentKey}`
+    );
 
     // Fetch 1-minute intraday data from Upstox API
+    // const response = await axios.get(
+    //   `https://api.upstox.com/v3/historical-candle/intraday/${instrumentKey}/minutes/1`,
+    //   {
+    //     headers: {
+    //       Authorization: `Bearer ${apiKey}`,
+    //     },
+    //     timeout: 15000,
+    //   }
+    // );
+
+    // Fetch historical upstox candle date for testing
     const response = await axios.get(
-      `https://api.upstox.com/v3/historical-candle/intraday/${instrumentKey}/minutes/1`,
+      `https://api.upstox.com/v3/historical-candle/${instrumentKey}/minutes/1/2025-06-25/2025-06-26`,
       {
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -347,13 +362,15 @@ async function fetchUpstoxCandles(
       !response.data.data.candles ||
       response.data.data.candles.length === 0
     ) {
-      console.log("Upstox API: No valid data found, using mock data");
+      console.error("❌ Upstox API: No valid market data found");
       console.log("Response data:", response.data);
-      return generateAdvancedMockCandles(instrumentKey);
+      throw new Error(
+        "No market data available from Upstox API. The market might be closed or the instrument might be invalid."
+      );
     }
 
     console.log(
-      `Successfully fetched ${response.data.data.candles.length} data points from Upstox for ${instrumentKey}`
+      `✅ Successfully fetched ${response.data.data.candles.length} data points from Upstox for ${instrumentKey}`
     );
 
     // Convert Upstox format to our standard format
@@ -376,67 +393,44 @@ async function fetchUpstoxCandles(
     );
 
     console.log(
-      `Fetched ${candles.length} candles from Upstox for ${instrumentKey}`
+      `✅ Processed ${candles.length} candles from Upstox for ${instrumentKey}`
     );
 
     return candles;
-  } catch (error) {
-    console.log("Upstox API error, using mock data:", error);
-    return generateAdvancedMockCandles(instrumentKey);
+  } catch (error: unknown) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error occurred";
+    console.error("❌ Upstox API error:", errorMessage);
+
+    // More specific error messages based on error type
+    if (error && typeof error === "object" && "response" in error) {
+      const axiosError = error as { response?: { status?: number } };
+      if (axiosError.response?.status === 401) {
+        throw new Error(
+          "Upstox API authentication failed. Please check your API key."
+        );
+      } else if (axiosError.response?.status === 429) {
+        throw new Error(
+          "Upstox API rate limit exceeded. Please try again later."
+        );
+      }
+    }
+
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ECONNABORTED"
+    ) {
+      throw new Error("Upstox API request timeout. Please try again.");
+    }
+
+    if (error instanceof Error && error.message.includes("UPSTOX_API_KEY")) {
+      throw error; // Re-throw API key configuration errors
+    }
+
+    throw new Error(`Failed to fetch market data: ${errorMessage}`);
   }
-}
-
-// Note: Upstox API removed - using Twelvedata as primary source with mock data fallback
-
-// Generate realistic mock data for comprehensive analysis
-function generateAdvancedMockCandles(instrumentKey: string): UpstoxCandle[] {
-  const candles: UpstoxCandle[] = [];
-  let basePrice = 100 + Math.random() * 500;
-
-  // Use instrument key patterns to determine base prices
-
-  // Add some instrument-specific price ranges based on common patterns
-  const instrumentPrices: { [key: string]: number } = {
-    "NSE_EQ|INE002A01018": 2500, // Reliance
-    "NSE_EQ|INE009A01021": 1800, // Infosys
-    "NSE_EQ|INE467B01029": 3500, // TCS
-    "NSE_EQ|INE040A01034": 1600, // HDFC
-    "NSE_EQ|INE090A01013": 1200, // ICICI
-  };
-
-  basePrice = instrumentPrices[instrumentKey] || basePrice;
-
-  // Generate 200 candles (about 3+ hours of 1-minute data)
-  for (let i = 0; i < 200; i++) {
-    const volatility = 0.002 + Math.random() * 0.003; // 0.2% to 0.5% volatility
-    const change = (Math.random() - 0.5) * basePrice * volatility;
-
-    const open = basePrice;
-    const close = basePrice + change;
-    const high =
-      Math.max(open, close) + Math.random() * basePrice * volatility * 0.5;
-    const low =
-      Math.min(open, close) - Math.random() * basePrice * volatility * 0.5;
-
-    // More realistic volume patterns
-    const baseVolume = 50000 + Math.random() * 100000;
-    const volumeMultiplier =
-      Math.random() < 0.1 ? 2 + Math.random() * 3 : 0.5 + Math.random() * 1.5;
-    const volume = Math.floor(baseVolume * volumeMultiplier);
-
-    candles.push({
-      timestamp: new Date(Date.now() - (200 - i) * 60000).toISOString(),
-      open,
-      high,
-      low,
-      close,
-      volume,
-    });
-
-    basePrice = close;
-  }
-
-  return candles;
 }
 
 // Enhanced OpenAI signal generation
@@ -458,8 +452,10 @@ async function getAdvancedOpenAISignal(
     console.log(`OpenAI API key length: ${apiKey ? apiKey.length : 0}`);
 
     if (!apiKey) {
-      console.log("OpenAI API key not found, using fallback logic");
-      throw new Error("OpenAI API key not configured");
+      console.error("❌ OPENAI_API_KEY not found in environment variables");
+      throw new Error(
+        "OpenAI API key not configured. Please add your OpenAI API key to environment variables to enable AI-powered trading signals."
+      );
     }
 
     const prompt = `Analyze this stock setup for intraday trading and provide a comprehensive trading plan.
@@ -796,171 +792,40 @@ If no clear setup exists, return:
       console.error("Error response data:", axiosError.response.data);
     }
 
-    console.log("Using advanced fallback logic due to OpenAI API error");
-
-    // Advanced fallback logic with trading plan
-    let signal = "neutral";
-    let opinion = "Technical analysis suggests neutral position.";
-    let buyPrice = indicators.price * 0.98;
-    let targetPrice = indicators.price * 1.02;
-    let stopLoss = indicators.price * 0.95;
-    let tradingPlan = "Rule-based trading plan based on technical indicators.";
-
-    const score = indicators.intraday_score;
-    const alignment = indicators.trend_alignment;
-    const rsi = indicators.rsi_14;
-    const price = indicators.price;
-    const timingAdvice = getTimingAdvice();
-
-    if (score >= 8 && indicators.clean_setup && indicators.volume_spike) {
-      signal = "strong";
-      opinion = `Excellent setup with ${score}/10 score. ${alignment} trend with volume confirmation and clean breakout pattern.`;
-      // For strong setups, buy near current price or slight pullback to VWAP
-      buyPrice = Math.min(price, indicators.vwap + indicators.atr_14 * 0.5);
-      targetPrice = price + indicators.atr_14 * 3; // 3x ATR target
-      stopLoss = Math.max(price * 0.96, indicators.vwap - indicators.atr_14); // Below VWAP or 4% loss
-      tradingPlan = `${timingAdvice} 
-      
-• DIRECTION: LONG - Buy position
-
-• ENTRY: Enter at ₹${buyPrice.toFixed(
-        2
-      )} - this is near VWAP support (₹${indicators.vwap.toFixed(
-        2
-      )}). Buy when price shows strength with good volume.
-
-• TARGET: Sell at ₹${targetPrice.toFixed(
-        2
-      )} - this is a technical target based on 3x ATR momentum. Potential gain: ${(
-        ((targetPrice - price) / price) *
-        100
-      ).toFixed(1)}%.
-
-• STOP LOSS: Exit at ₹${stopLoss.toFixed(
-        2
-      )} if trade goes wrong. This protects below VWAP support. Risk: ${(
-        ((price - stopLoss) / price) *
-        100
-      ).toFixed(1)}%.
-
-• STRATEGY: Strong setup - invest 2-3% of your money. Buy when volume increases. Sell half when you get good profits, hold rest for full target.`;
-    } else if (
-      score >= 6 &&
-      (indicators.breakout_day_high || indicators.opening_range_breakout)
-    ) {
-      signal = "caution";
-      opinion = `Good setup with ${score}/10 score. Breakout confirmed but watch for sustained momentum.`;
-      // For caution setups, wait for slight pullback and conservative targets
-      buyPrice = indicators.breakout_day_high ? price * 0.998 : indicators.vwap;
-      targetPrice = price + indicators.atr_14 * 2; // 2x ATR target
-      stopLoss = price - indicators.atr_14 * 1.5; // 1.5x ATR stop
-      tradingPlan = `${timingAdvice}
-
-• DIRECTION: LONG - Buy position
-
-• ENTRY: Enter at ₹${buyPrice.toFixed(2)} - ${
-        indicators.breakout_day_high
-          ? "near current breakout level"
-          : "at VWAP support (₹" + indicators.vwap.toFixed(2) + ")"
-      }. Wait 5-10 minutes to confirm breakout.
-
-• TARGET: Sell at ₹${targetPrice.toFixed(
-        2
-      )} - technical target based on 2x ATR. Potential gain: ${(
-        ((targetPrice - price) / price) *
-        100
-      ).toFixed(1)}%.
-
-• STOP LOSS: Exit at ₹${stopLoss.toFixed(2)} if it breaks down. Risk: ${(
-        ((price - stopLoss) / price) *
-        100
-      ).toFixed(1)}%.
-
-• STRATEGY: Moderate setup - invest 1-2% of your money. Be patient for right entry. Sell most shares at 3% profit, keep some for full target.`;
-    } else if (rsi > 75 || rsi < 25) {
-      signal = "risk";
-      opinion = `Extreme RSI (${rsi.toFixed(
-        1
-      )}) suggests overbought/oversold conditions. High reversal risk.`;
-      // For risk setups, wait for significant pullback
-      buyPrice =
-        rsi > 75
-          ? indicators.vwap - indicators.atr_14 * 0.5
-          : indicators.vwap + indicators.atr_14 * 0.5;
-      targetPrice = price + indicators.atr_14 * 1; // Small 1x ATR target
-      stopLoss = buyPrice - indicators.atr_14 * 2; // Wide 2x ATR stop
-      tradingPlan = `${timingAdvice}
-
-⚠️ HIGH RISK TRADE ⚠️
-
-• DIRECTION: LONG - Buy position (high risk)
-
-• ENTRY: DO NOT buy immediately! Wait for price to come down to ₹${buyPrice.toFixed(
-        2
-      )} - this is ${
-        rsi > 75 ? "below VWAP" : "above VWAP"
-      } (₹${indicators.vwap.toFixed(2)}). Stock is ${
-        rsi > 75 ? "overbought" : "oversold"
-      } (RSI: ${rsi.toFixed(1)}).
-
-• TARGET: Sell at ₹${targetPrice.toFixed(
-        2
-      )} - conservative 1x ATR target. Potential gain: ${(
-        ((targetPrice - price) / price) *
-        100
-      ).toFixed(1)}%.
-
-• STOP LOSS: Exit at ₹${stopLoss.toFixed(
-        2
-      )} if it goes wrong. Wide 2x ATR stop for high volatility. Risk: ${(
-        ((buyPrice - stopLoss) / buyPrice) *
-        100
-      ).toFixed(1)}%.
-
-• STRATEGY: High risk - only 0.5% of your money. Wait 1-3 hours for better entry. Consider avoiding completely.`;
-    } else if (score < 4 || !indicators.clean_setup) {
-      signal = "neutral";
-      opinion = `Mixed signals with ${score}/10 score. Lack of clear directional bias suggests waiting for better setup.`;
-      // For neutral setups, wait for clear breakout levels
-      buyPrice = indicators.vwap; // Wait for VWAP level
-      targetPrice = price + indicators.atr_14 * 1.5; // 1.5x ATR target
-      stopLoss = indicators.vwap - indicators.atr_14 * 1; // 1x ATR below VWAP
-      tradingPlan = `${timingAdvice}
-
-🤔 UNCLEAR SETUP - PROCEED WITH CAUTION
-
-• DIRECTION: LONG - Buy position (uncertain)
-
-• ENTRY: Wait! Don't buy at current price. Wait for VWAP level (₹${buyPrice.toFixed(
-        2
-      )}) first. Need clear direction - either break above ₹${(
-        price * 1.02
-      ).toFixed(2)} or fall below ₹${(price * 0.98).toFixed(2)}.
-
-• TARGET: Conservative target at ₹${targetPrice.toFixed(
-        2
-      )} - 1.5x ATR based. Potential gain: ${(
-        ((targetPrice - price) / price) *
-        100
-      ).toFixed(1)}%.
-
-• STOP LOSS: Exit at ₹${stopLoss.toFixed(2)} - 1x ATR below VWAP. Risk: ${(
-        ((indicators.vwap - stopLoss) / indicators.vwap) *
-        100
-      ).toFixed(1)}%.
-
-• STRATEGY: Maximum 1% of money only. Wait 2-4 hours for clarity. Better to skip and wait for clearer opportunity.`;
+    // Re-throw the error instead of using fallback logic
+    if (error && typeof error === "object" && "response" in error) {
+      const axiosError = error as { response?: { status?: number } };
+      if (axiosError.response?.status === 401) {
+        throw new Error(
+          "OpenAI API authentication failed. Please check your API key."
+        );
+      } else if (axiosError.response?.status === 429) {
+        throw new Error(
+          "OpenAI API rate limit exceeded. Please try again later."
+        );
+      } else if (axiosError.response?.status === 402) {
+        throw new Error(
+          "OpenAI API quota exceeded. Please check your billing settings."
+        );
+      }
     }
 
-    return {
-      signal: signal as "strong" | "caution" | "neutral" | "risk",
-      opinion,
-      direction: "LONG", // Default to LONG for fallback logic
-      buyPrice,
-      targetPrice,
-      stopLoss,
-      tradingPlan,
-    };
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ECONNABORTED"
+    ) {
+      throw new Error("OpenAI API request timeout. Please try again.");
+    }
+
+    if (error instanceof Error && error.message.includes("OPENAI_API_KEY")) {
+      throw error; // Re-throw API key configuration errors
+    }
+
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error occurred";
+    throw new Error(`OpenAI API failed: ${errorMessage}`);
   }
 }
 
@@ -1083,12 +948,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch optimized market data using Upstox API
-    const candles = await fetchUpstoxCandles(stock.instrument_key);
+    // Fetch real market data using Upstox API
+    let candles: UpstoxCandle[];
+    try {
+      candles = await fetchUpstoxCandles(stock.instrument_key);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to fetch market data";
+      console.error(
+        `❌ Market data fetch failed for ${stock.symbol}:`,
+        errorMessage
+      );
+
+      return NextResponse.json(
+        {
+          error: `Market data unavailable: ${errorMessage}`,
+          alert:
+            "Unable to fetch real-time market data. Please check your API configuration or try again later.",
+          details: errorMessage,
+        },
+        { status: 503 }
+      );
+    }
 
     if (candles.length === 0) {
       return NextResponse.json(
-        { error: "No market data available" },
+        {
+          error: "No market data available",
+          alert:
+            "No market data found for this stock. The market might be closed or the instrument might be invalid.",
+        },
         { status: 400 }
       );
     }
@@ -1129,15 +1018,40 @@ export async function POST(request: NextRequest) {
     indicators.intraday_score = calculateIntradayScore(indicators);
 
     // Get AI signal with trading plan
-    const {
-      signal,
+    let signal,
       opinion,
       direction,
       buyPrice,
       targetPrice,
       stopLoss,
-      tradingPlan,
-    } = await getAdvancedOpenAISignal(indicators);
+      tradingPlan;
+    try {
+      const aiSignal = await getAdvancedOpenAISignal(indicators);
+      signal = aiSignal.signal;
+      opinion = aiSignal.opinion;
+      direction = aiSignal.direction;
+      buyPrice = aiSignal.buyPrice;
+      targetPrice = aiSignal.targetPrice;
+      stopLoss = aiSignal.stopLoss;
+      tradingPlan = aiSignal.tradingPlan;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "AI signal generation failed";
+      console.error(
+        `❌ AI signal generation failed for ${stock.symbol}:`,
+        errorMessage
+      );
+
+      return NextResponse.json(
+        {
+          error: `AI analysis unavailable: ${errorMessage}`,
+          alert:
+            "Unable to generate AI-powered trading signals. Please check your OpenAI API configuration.",
+          details: errorMessage,
+        },
+        { status: 503 }
+      );
+    }
 
     // Save comprehensive analysis to database
     const { data: signalData, error: signalError } = await supabase

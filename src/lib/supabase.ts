@@ -19,6 +19,8 @@ export interface Stock {
   id: string;
   session_id: string;
   symbol: string;
+  instrument_key?: string;
+  exchange?: string;
   created_at: string;
   session?: Session;
 }

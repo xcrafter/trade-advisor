@@ -41,6 +41,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Extract exchange from instrument key (e.g., "NSE_EQ|INE002A01018" -> "NSE")
+    const exchange =
+      instrumentKey.split("|")[0]?.replace("_EQ", "") || "Unknown";
+
     // Insert new stock
     const { data, error } = await supabase
       .from("stocks")
@@ -49,6 +53,7 @@ export async function POST(request: NextRequest) {
           session_id: sessionId,
           symbol: symbol.toUpperCase(),
           instrument_key: instrumentKey,
+          exchange: exchange,
         },
       ])
       .select(
