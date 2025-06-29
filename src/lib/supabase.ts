@@ -23,6 +23,7 @@ export interface Stock {
   exchange?: string;
   created_at: string;
   session?: Session;
+  latestSignal?: Signal;
 }
 
 export interface Signal {
@@ -32,22 +33,24 @@ export interface Signal {
   timestamp: string;
 
   // Price data
-  price: number;
+  price: number; // Current price from analysis
 
-  // Technical Indicators
+  // Technical Indicators (both old and new column names for compatibility)
   vwap?: number;
-  rsi_14?: number;
-  sma_20?: number;
+  rsi?: number; // Old column name (= rsi_14)
+  rsi_14?: number; // New column name
+  sma?: number; // Old column name (= sma_20)
+  sma_20?: number; // New column name
   ema_9?: number;
   atr_14?: number;
 
   // Volume and Momentum
-  volume?: number;
+  volume?: number; // Trading volume
   volume_spike?: boolean;
 
   // Trend and Alignment
-  trend?: string;
-  trend_alignment?: string;
+  trend?: string; // Old column name (= trend_alignment)
+  trend_alignment?: string; // New column name
 
   // Breakout Signals
   breakout_day_high?: boolean;
@@ -68,6 +71,13 @@ export interface Signal {
   target_price?: number;
   stop_loss?: number;
   trading_plan?: string;
+
+  // Volume Range Recommendations
+  min_volume?: number;
+  max_volume?: number;
+  recommended_volume?: number;
+  position_size_percent?: number;
+  volume_range_text?: string;
 
   created_at: string;
   stock?: Stock;

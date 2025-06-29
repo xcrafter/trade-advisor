@@ -76,9 +76,9 @@ Before running this project, you need:
 
 5. **Start the development server**:
 
-   ```bash
-   npm run dev
-   ```
+```bash
+npm run dev
+```
 
 6. **Open your browser**:
    Navigate to [http://localhost:3000](http://localhost:3000)

@@ -83,6 +83,7 @@ export default function StockDashboard({
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedStocks, setSelectedStocks] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -93,19 +94,27 @@ export default function StockDashboard({
     showAdvancedIndicators: true,
     showBreakoutSignals: true,
     showQualityMetrics: true,
-    showVolumeData: true,
+    showVolumeData: false,
     showInsights: true,
-    showTradingPlan: true,
+    showTradingPlan: false,
     compactView: false,
   });
 
   useEffect(() => {
     if (sessionId) {
+      console.log("Fetching data for sessionId:", sessionId);
       fetchSession();
       fetchStocks();
-      fetchSignals();
     }
   }, [sessionId]);
+
+  // Separate effect for fetching signals after stocks are loaded
+  useEffect(() => {
+    if (sessionId && stocks.length > 0) {
+      console.log("Fetching signals for", stocks.length, "stocks");
+      fetchSignals();
+    }
+  }, [sessionId, stocks.length]);
 
   const fetchSession = async () => {
     try {
@@ -122,10 +131,18 @@ export default function StockDashboard({
 
   const fetchStocks = async () => {
     try {
+      console.log("Fetching stocks for sessionId:", sessionId);
       const response = await fetch(`/api/stocks?sessionId=${sessionId}`);
       if (response.ok) {
         const data = await response.json();
+        console.log("Fetched stocks:", data.length);
         setStocks(data);
+      } else {
+        console.error(
+          "Failed to fetch stocks:",
+          response.status,
+          response.statusText
+        );
       }
     } catch (error) {
       console.error("Failed to fetch stocks:", error);
@@ -134,9 +151,11 @@ export default function StockDashboard({
 
   const fetchSignals = async () => {
     try {
+      console.log("Fetching signals for sessionId:", sessionId);
       const response = await fetch(`/api/signals?sessionId=${sessionId}`);
       if (response.ok) {
         const data = await response.json();
+        console.log("Fetched signals:", data.length);
         setSignals(data);
 
         // Update stocks with latest signals
@@ -147,6 +166,12 @@ export default function StockDashboard({
               (signal: Signal) => signal.stock_id === stock.id
             ),
           }))
+        );
+      } else {
+        console.error(
+          "Failed to fetch signals:",
+          response.status,
+          response.statusText
         );
       }
     } catch (error) {
@@ -181,8 +206,14 @@ export default function StockDashboard({
         setSelectedStock(null);
         setShowAddDialog(false);
 
-        // Automatically analyze the newly added stock
+        // Show success message for adding stock
+        setSuccessMessage(
+          `✅ ${newStock.symbol} added to watchlist successfully!`
+        );
+
+        // Clear the success message and start analysis
         setTimeout(() => {
+          setSuccessMessage("🔄 Starting analysis...");
           analyzeStock(newStock.id);
         }, 500);
       } else {
@@ -222,6 +253,18 @@ export default function StockDashboard({
             stock.id === stockId ? { ...stock, latestSignal: newSignal } : stock
           )
         );
+
+        // Show success message
+        const stockSymbol =
+          stocks.find((s) => s.id === stockId)?.symbol || "Stock";
+        setSuccessMessage(
+          `✅ ${stockSymbol} analysis completed successfully! Signal: ${newSignal.signal.toUpperCase()}`
+        );
+
+        // Clear success message after 3 seconds
+        setTimeout(() => {
+          setSuccessMessage("");
+        }, 3000);
       } else {
         const errorData = await response.json();
         // Show detailed error message with alert if available
@@ -237,11 +280,17 @@ export default function StockDashboard({
             errorData.error?.includes("Market data unavailable") ||
             errorData.error?.includes("AI analysis unavailable"))
         ) {
-          alert(
+          const stockSymbol =
+            stocks.find((s) => s.id === stockId)?.symbol || "Stock";
+          const shouldRemove = confirm(
             `⚠️ Configuration Issue\n\n${errorData.alert}\n\nDetails: ${
               errorData.details || errorData.error
-            }`
+            }\n\nWould you like to remove ${stockSymbol} from the watchlist since analysis failed?`
           );
+
+          if (shouldRemove) {
+            removeStock(stockId);
+          }
         }
       }
     } catch (error) {
@@ -251,6 +300,38 @@ export default function StockDashboard({
       console.error("Analysis error:", error);
     } finally {
       setAnalyzing(null);
+    }
+  };
+
+  const removeStock = async (stockId: string) => {
+    try {
+      const response = await fetch(
+        `/api/stocks?stockId=${stockId}&sessionId=${sessionId}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      if (response.ok) {
+        // Remove stock from state
+        setStocks((prev) => prev.filter((stock) => stock.id !== stockId));
+        setSignals((prev) =>
+          prev.filter((signal) => signal.stock_id !== stockId)
+        );
+
+        const stockSymbol =
+          stocks.find((s) => s.id === stockId)?.symbol || "Stock";
+        setSuccessMessage(`🗑️ ${stockSymbol} removed from watchlist`);
+
+        // Clear message after 2 seconds
+        setTimeout(() => {
+          setSuccessMessage("");
+        }, 2000);
+      } else {
+        setError("Failed to remove stock");
+      }
+    } catch {
+      setError("Failed to remove stock");
     }
   };
 
@@ -273,6 +354,148 @@ export default function StockDashboard({
       setSelectedStocks(new Set());
     } else {
       setSelectedStocks(new Set(stocks.map((stock) => stock.id)));
+    }
+  };
+
+  // Handle bulk analysis
+  const analyzeSelectedStocks = async () => {
+    if (selectedStocks.size === 0) return;
+
+    const stocksToAnalyze = stocks.filter((stock) =>
+      selectedStocks.has(stock.id)
+    );
+    const stockNames = stocksToAnalyze.map((stock) => stock.symbol).join(", ");
+
+    const confirmed = window.confirm(
+      `Are you sure you want to analyze ${selectedStocks.size} stock(s) (${stockNames})? This may take a few minutes.`
+    );
+
+    if (!confirmed) return;
+
+    setError("");
+    setSuccessMessage(
+      `🔄 Starting bulk analysis of ${selectedStocks.size} stocks...`
+    );
+
+    try {
+      // Analyze stocks in parallel with a limit to avoid overwhelming the API
+      const batchSize = 3; // Analyze 3 stocks at a time
+      const stockIds = Array.from(selectedStocks);
+      const results = [];
+
+      for (let i = 0; i < stockIds.length; i += batchSize) {
+        const batch = stockIds.slice(i, i + batchSize);
+
+        setSuccessMessage(
+          `🔄 Analyzing batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(
+            stockIds.length / batchSize
+          )} (${batch.length} stocks)...`
+        );
+
+        const batchPromises = batch.map(async (stockId) => {
+          try {
+            const response = await fetch("/api/analyze", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ stockId, sessionId }),
+            });
+
+            if (response.ok) {
+              const newSignal = await response.json();
+              return { success: true, stockId, signal: newSignal };
+            } else {
+              const errorData = await response.json();
+              return {
+                success: false,
+                stockId,
+                error: errorData.error || "Analysis failed",
+              };
+            }
+          } catch {
+            return {
+              success: false,
+              stockId,
+              error: "Network error",
+            };
+          }
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
+
+        // Update signals for successful analyses in this batch
+        const successfulResults = batchResults.filter((r) => r.success);
+        if (successfulResults.length > 0) {
+          setSignals((prev) => {
+            const newSignals = [...prev];
+            successfulResults.forEach((result) => {
+              // Remove old signal for this stock
+              const index = newSignals.findIndex(
+                (s) => s.stock_id === result.stockId
+              );
+              if (index >= 0) {
+                newSignals[index] = result.signal;
+              } else {
+                newSignals.push(result.signal);
+              }
+            });
+            return newSignals;
+          });
+
+          // Update stocks with new signals
+          setStocks((prev) =>
+            prev.map((stock) => {
+              const result = successfulResults.find(
+                (r) => r.stockId === stock.id
+              );
+              return result ? { ...stock, latestSignal: result.signal } : stock;
+            })
+          );
+        }
+
+        // Add delay between batches to avoid overwhelming the API
+        if (i + batchSize < stockIds.length) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
+
+      // Show final results
+      const successful = results.filter((r) => r.success).length;
+      const failed = results.filter((r) => !r.success).length;
+
+      if (failed === 0) {
+        setSuccessMessage(
+          `✅ Bulk analysis completed successfully! Analyzed ${successful} stocks.`
+        );
+      } else {
+        setSuccessMessage(
+          `⚠️ Bulk analysis completed with ${successful} successes and ${failed} failures.`
+        );
+
+        // Show details of failed analyses
+        const failedStocks = results
+          .filter((r) => !r.success)
+          .map((r) => {
+            const stock = stocks.find((s) => s.id === r.stockId);
+            return `${stock?.symbol || "Unknown"}: ${r.error}`;
+          })
+          .join("\n");
+
+        setError(`Failed analyses:\n${failedStocks}`);
+      }
+
+      // Clear selection after analysis
+      setSelectedStocks(new Set());
+
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        setSuccessMessage("");
+      }, 5000);
+    } catch (error) {
+      setError("Bulk analysis failed - Unable to connect to server");
+      console.error("Bulk analysis error:", error);
     }
   };
 
@@ -453,7 +676,7 @@ export default function StockDashboard({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      <div className="container mx-auto max-w-[1600px] p-6">
+      <div className="container mx-auto max-w-[2000px] p-6">
         {/* Simple Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-6">
@@ -547,6 +770,13 @@ export default function StockDashboard({
                   </Alert>
                 )}
 
+                {successMessage && (
+                  <Alert className="border-green-200 bg-green-50 text-green-800">
+                    <CheckSquare className="h-4 w-4 text-green-600" />
+                    <AlertDescription>{successMessage}</AlertDescription>
+                  </Alert>
+                )}
+
                 <div className="flex justify-end gap-3">
                   <DialogTrigger asChild>
                     <Button type="button" variant="outline">
@@ -580,8 +810,26 @@ export default function StockDashboard({
           </Dialog>
         </div>
 
+        {/* Main Dashboard Alerts */}
+        {(error || successMessage) && (
+          <div className="space-y-3">
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            {successMessage && (
+              <Alert className="border-green-200 bg-green-50 text-green-800">
+                <CheckSquare className="h-4 w-4 text-green-600" />
+                <AlertDescription>{successMessage}</AlertDescription>
+              </Alert>
+            )}
+          </div>
+        )}
+
         {/* Enhanced Analysis Table */}
-        <Card className="shadow-xl">
+        <Card className="shadow-xl w-full overflow-hidden">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -665,25 +913,6 @@ export default function StockDashboard({
 
                       <div className="flex items-center justify-between">
                         <Label className="text-base font-medium">
-                          Volume Data
-                        </Label>
-                        <Button
-                          variant={
-                            viewSettings.showVolumeData ? "default" : "outline"
-                          }
-                          size="sm"
-                          onClick={() => toggleViewSetting("showVolumeData")}
-                        >
-                          {viewSettings.showVolumeData ? (
-                            <Eye className="h-4 w-4" />
-                          ) : (
-                            <EyeOff className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <Label className="text-base font-medium">
                           Breakout Signals
                         </Label>
                         <Button
@@ -730,7 +959,7 @@ export default function StockDashboard({
 
                       <div className="flex items-center justify-between">
                         <Label className="text-base font-medium">
-                          Analysis Opinion (AI/Rule-based)
+                          AI Analysis (LLM Opinion)
                         </Label>
                         <Button
                           variant={
@@ -740,25 +969,6 @@ export default function StockDashboard({
                           onClick={() => toggleViewSetting("showInsights")}
                         >
                           {viewSettings.showInsights ? (
-                            <Eye className="h-4 w-4" />
-                          ) : (
-                            <EyeOff className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <Label className="text-base font-medium">
-                          Trading Plan (Entry/Target/Stop Loss)
-                        </Label>
-                        <Button
-                          variant={
-                            viewSettings.showTradingPlan ? "default" : "outline"
-                          }
-                          size="sm"
-                          onClick={() => toggleViewSetting("showTradingPlan")}
-                        >
-                          {viewSettings.showTradingPlan ? (
                             <Eye className="h-4 w-4" />
                           ) : (
                             <EyeOff className="h-4 w-4" />
@@ -819,34 +1029,55 @@ export default function StockDashboard({
                           : "Select All"}
                       </Button>
 
-                      {selectedStocks.size > 0 && (
-                        <span className="text-sm text-slate-600 dark:text-slate-400">
-                          {selectedStocks.size} of {stocks.length} selected
-                        </span>
-                      )}
+                      <span className="text-sm text-slate-600 dark:text-slate-400 font-medium">
+                        {selectedStocks.size > 0
+                          ? `✅ ${selectedStocks.size} of ${stocks.length} selected`
+                          : `${stocks.length} stocks available for selection`}
+                      </span>
                     </div>
 
-                    {selectedStocks.size > 0 && (
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={deleteSelectedStocks}
-                        disabled={isDeleting}
-                        className="gap-2"
-                      >
-                        {isDeleting ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Trash className="h-4 w-4" />
-                        )}
-                        Delete Selected ({selectedStocks.size})
-                      </Button>
-                    )}
+                    <div className="flex gap-3">
+                      {selectedStocks.size > 0 ? (
+                        <>
+                          <Button
+                            size="sm"
+                            onClick={analyzeSelectedStocks}
+                            disabled={analyzing !== null}
+                            className="gap-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold shadow-md"
+                          >
+                            {analyzing ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Activity className="h-4 w-4" />
+                            )}
+                            🔍 Analyze Selected ({selectedStocks.size})
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={deleteSelectedStocks}
+                            disabled={isDeleting}
+                            className="gap-2"
+                          >
+                            {isDeleting ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash className="h-4 w-4" />
+                            )}
+                            Delete Selected ({selectedStocks.size})
+                          </Button>
+                        </>
+                      ) : (
+                        <div className="text-sm text-slate-500 italic">
+                          Select stocks to see bulk actions
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
                 <div className="overflow-x-auto">
-                  <Table className="min-w-full">
+                  <Table className="min-w-[2000px] w-full">
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-[50px] sticky left-0 z-10 bg-background border-r">
@@ -932,8 +1163,8 @@ export default function StockDashboard({
                         </TableHead>
 
                         {viewSettings.showInsights && (
-                          <TableHead className="font-semibold min-w-[350px]">
-                            Analysis Opinion
+                          <TableHead className="font-semibold w-[500px] min-w-[500px] max-w-[500px]">
+                            AI Analysis
                           </TableHead>
                         )}
 
@@ -948,7 +1179,10 @@ export default function StockDashboard({
                             <TableHead className="font-semibold min-w-[100px]">
                               Stop Loss
                             </TableHead>
-                            <TableHead className="font-semibold min-w-[400px]">
+                            <TableHead className="font-semibold w-[250px] min-w-[250px] max-w-[250px]">
+                              Volume Strategy
+                            </TableHead>
+                            <TableHead className="font-semibold w-[600px] min-w-[600px] max-w-[600px]">
                               Trading Plan
                             </TableHead>
                           </>
@@ -1147,8 +1381,8 @@ export default function StockDashboard({
                             </TableCell>
 
                             {viewSettings.showInsights && (
-                              <TableCell className="max-w-[400px] min-w-[350px]">
-                                <div className="text-sm text-slate-600 dark:text-slate-400 break-words whitespace-normal leading-relaxed">
+                              <TableCell className="w-[500px] min-w-[500px] max-w-[500px]">
+                                <div className="text-sm text-slate-600 dark:text-slate-400 break-words whitespace-normal leading-relaxed p-3 bg-blue-50 dark:bg-blue-900/20 rounded border">
                                   {latestSignal?.llm_opinion
                                     ? latestSignal.llm_opinion
                                     : latestSignal
@@ -1185,10 +1419,45 @@ export default function StockDashboard({
                                     ? `₹${formatNumber(latestSignal.stop_loss)}`
                                     : "N/A"}
                                 </TableCell>
-                                <TableCell className="max-w-[450px] min-w-[400px]">
-                                  <div className="text-sm text-slate-600 dark:text-slate-400 break-words whitespace-pre-line leading-6 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border shadow-sm">
+                                <TableCell className="w-[250px] min-w-[250px] max-w-[250px]">
+                                  {latestSignal?.volume_range_text ? (
+                                    <div className="text-sm text-slate-600 dark:text-slate-400 break-words whitespace-normal leading-relaxed p-3 bg-green-50 dark:bg-green-900/20 rounded border">
+                                      {latestSignal.volume_range_text}
+                                    </div>
+                                  ) : latestSignal?.recommended_volume ? (
+                                    <div className="text-sm text-slate-600 dark:text-slate-400 break-words whitespace-normal leading-relaxed p-3 bg-green-50 dark:bg-green-900/20 rounded border">
+                                      <div className="font-semibold text-blue-600 mb-1">
+                                        Recommended:{" "}
+                                        {latestSignal.recommended_volume} shares
+                                      </div>
+                                      <div className="text-xs text-slate-500 mb-1">
+                                        Range: {latestSignal.min_volume}-
+                                        {latestSignal.max_volume} shares
+                                      </div>
+                                      {latestSignal.recommended_volume &&
+                                        latestSignal.buy_price && (
+                                          <div className="text-xs text-green-700 font-medium">
+                                            Investment: ₹
+                                            {(
+                                              (latestSignal.recommended_volume *
+                                                latestSignal.buy_price) /
+                                              1000
+                                            ).toFixed(0)}
+                                            K
+                                          </div>
+                                        )}
+                                    </div>
+                                  ) : (
+                                    <div className="text-sm text-slate-400 p-3 bg-gray-50 dark:bg-gray-800 rounded border">
+                                      No volume strategy available
+                                    </div>
+                                  )}
+                                </TableCell>
+                                <TableCell className="w-[600px] min-w-[600px] max-w-[600px]">
+                                  <div className="text-sm text-slate-600 dark:text-slate-400 break-words whitespace-pre-line leading-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border shadow-sm">
                                     {formatTradingPlan(
-                                      latestSignal?.trading_plan || ""
+                                      latestSignal?.trading_plan ||
+                                        "No trading plan available"
                                     )}
                                   </div>
                                 </TableCell>

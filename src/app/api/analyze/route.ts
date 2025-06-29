@@ -344,7 +344,7 @@ async function fetchUpstoxCandles(
 
     // Fetch historical upstox candle date for testing
     const response = await axios.get(
-      `https://api.upstox.com/v3/historical-candle/${instrumentKey}/minutes/1/2025-06-25/2025-06-26`,
+      `https://api.upstox.com/v3/historical-candle/${instrumentKey}/minutes/1/2025-06-24/2025-06-23`,
       {
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -433,6 +433,97 @@ async function fetchUpstoxCandles(
   }
 }
 
+// Calculate recommended volume range based on risk parameters
+function calculateVolumeRange(
+  entryPrice: number,
+  stopLoss: number,
+  signal: string
+): {
+  minVolume: number;
+  maxVolume: number;
+  recommendedVolume: number;
+  positionSizePercent: number;
+  volumeRangeText: string;
+} {
+  // Risk per share (absolute value)
+  const riskPerShare = Math.abs(entryPrice - stopLoss);
+
+  // Risk tolerance based on signal strength (much more conservative for intraday)
+  const riskToleranceMap = {
+    strong: { minRisk: 0.5, maxRisk: 1.5, recommended: 1.0 }, // 0.5-1.5% of capital
+    caution: { minRisk: 0.3, maxRisk: 1.0, recommended: 0.5 }, // 0.3-1% of capital
+    neutral: { minRisk: 0.2, maxRisk: 0.7, recommended: 0.3 }, // 0.2-0.7% of capital
+    risk: { minRisk: 0.1, maxRisk: 0.3, recommended: 0.2 }, // 0.1-0.3% of capital
+  };
+
+  const riskProfile =
+    riskToleranceMap[signal as keyof typeof riskToleranceMap] ||
+    riskToleranceMap.neutral;
+
+  // Realistic account sizes for intraday trading
+  const accountSizes = [25000, 50000, 100000, 200000, 300000]; // ₹25K to ₹3L
+
+  // Calculate for realistic account size (₹1L)
+  const baseAccountSize = 100000;
+
+  // Calculate position sizes
+  const minRiskAmount = (baseAccountSize * riskProfile.minRisk) / 100;
+  const maxRiskAmount = (baseAccountSize * riskProfile.maxRisk) / 100;
+  const recommendedRiskAmount =
+    (baseAccountSize * riskProfile.recommended) / 100;
+
+  // Calculate volume (shares) based on risk per share
+  const maxVolume = Math.floor(maxRiskAmount / riskPerShare);
+  const minVolume = Math.floor(minRiskAmount / riskPerShare);
+  const recommendedVolume = Math.floor(recommendedRiskAmount / riskPerShare);
+
+  // Set realistic limits for intraday trading (max investment ₹50K)
+  const maxInvestmentLimit = 50000; // ₹50K max investment for intraday
+  const maxVolumeByInvestment = Math.floor(maxInvestmentLimit / entryPrice);
+
+  // Ensure minimum volume is at least 1 and maximum is realistic
+  const safeMinVolume = Math.max(1, minVolume);
+  const safeMaxVolume = Math.max(
+    safeMinVolume + 1,
+    Math.min(maxVolume, maxVolumeByInvestment)
+  );
+  const safeRecommendedVolume = Math.max(
+    safeMinVolume,
+    Math.min(recommendedVolume, safeMaxVolume, maxVolumeByInvestment)
+  );
+
+  // Calculate position size percentage
+  const positionValue = safeRecommendedVolume * entryPrice;
+  const positionSizePercent = (positionValue / baseAccountSize) * 100;
+
+  // Generate volume range text for different account sizes
+  const volumeRanges = accountSizes.map((accountSize) => {
+    const riskAmount = (accountSize * riskProfile.recommended) / 100;
+    const volume = Math.max(1, Math.floor(riskAmount / riskPerShare));
+    const investment = volume * entryPrice;
+
+    if (accountSize >= 100000) {
+      return `₹${(accountSize / 1000).toFixed(0)}K → ${volume} shares (₹${(
+        investment / 1000
+      ).toFixed(0)}K)`;
+    } else {
+      return `₹${(accountSize / 1000).toFixed(
+        0
+      )}K → ${volume} shares (₹${investment.toFixed(0)})`;
+    }
+  });
+
+  const volumeRangeText = volumeRanges.join(", ");
+
+  return {
+    minVolume: safeMinVolume,
+    maxVolume: safeMaxVolume,
+    recommendedVolume: safeRecommendedVolume,
+    positionSizePercent: positionSizePercent,
+    volumeRangeText,
+  };
+}
+
 // Enhanced OpenAI signal generation
 async function getAdvancedOpenAISignal(
   indicators: AdvancedTechnicalIndicators
@@ -444,6 +535,13 @@ async function getAdvancedOpenAISignal(
   targetPrice: number;
   stopLoss: number;
   tradingPlan: string;
+  volumeRange: {
+    minVolume: number;
+    maxVolume: number;
+    recommendedVolume: number;
+    positionSizePercent: number;
+    volumeRangeText: string;
+  };
 }> {
   try {
     // Check if OpenAI API key is available
@@ -480,7 +578,8 @@ INSTRUCTIONS:
 1. Determine if this is a LONG (buy) or SHORT (sell) setup based on technical indicators
 2. Provide signal strength: strong/caution/neutral/risk
 3. Calculate entry, target, and stop loss prices using ATR and technical levels
-4. Generate a comprehensive trading plan with bullet points
+4. Calculate recommended volume/position size based on risk management
+5. Generate a comprehensive trading plan with bullet points including volume recommendations
 
 CRITICAL: You MUST respond with ONLY a valid JSON object in this exact format:
 
@@ -491,7 +590,7 @@ CRITICAL: You MUST respond with ONLY a valid JSON object in this exact format:
   "entry_price": 123.45,
   "target_price": 130.50,
   "stop_loss": 118.20,
-  "trading_plan": "Market timing advice\\n\\n• DIRECTION: LONG - Buy position\\n\\n• ENTRY: Buy at ₹123.45 - explanation\\n\\n• TARGET: Sell at ₹130.50 - Potential gain: X.X%\\n\\n• STOP LOSS: Exit at ₹118.20 - Risk: X.X%\\n\\n• STRATEGY: Position size and risk management advice"
+  "trading_plan": "Market timing advice\\n\\n• DIRECTION: LONG - Buy position\\n\\n• ENTRY: Buy at ₹123.45 - explanation\\n\\n• TARGET: Sell at ₹130.50 - Potential gain: X.X%\\n\\n• STOP LOSS: Exit at ₹118.20 - Risk: X.X%\\n\\n• VOLUME: Recommended 50-150 shares (₹75K-₹225K investment)\\n\\n• STRATEGY: Risk management and timing advice"
 }
 
 GUIDELINES:
@@ -729,6 +828,13 @@ If no clear setup exists, return:
         ? (((entryPrice - stopLoss) / entryPrice) * 100).toFixed(1)
         : (((stopLoss - entryPrice) / entryPrice) * 100).toFixed(1);
 
+      // Calculate volume for fallback plan
+      const fallbackVolumeRange = calculateVolumeRange(
+        entryPrice,
+        stopLoss,
+        signal
+      );
+
       finalTradingPlan = `${timingAdvice}
 
 • DIRECTION: ${direction} - ${isLong ? "Buy" : "Sell Short"}
@@ -745,16 +851,31 @@ If no clear setup exists, return:
         2
       )} if trade goes wrong - Risk: ${riskPercent}%
 
+• VOLUME: Recommended ${fallbackVolumeRange.recommendedVolume} shares (Range: ${
+        fallbackVolumeRange.minVolume
+      }-${fallbackVolumeRange.maxVolume} shares)
+  Investment: ₹${(
+    (fallbackVolumeRange.recommendedVolume * entryPrice) /
+    1000
+  ).toFixed(0)}K | Risk: ₹${(
+        (fallbackVolumeRange.recommendedVolume *
+          Math.abs(entryPrice - stopLoss)) /
+        1000
+      ).toFixed(1)}K
+
 • STRATEGY: ${
         signal === "strong"
-          ? "Strong setup - invest 2-3% of your money"
+          ? "Strong intraday setup - risk 1% of capital, max ₹50K investment"
           : signal === "caution"
-          ? "Moderate setup - invest 1-2% of your money"
+          ? "Moderate setup - risk 0.5% of capital, max ₹30K investment"
           : signal === "risk"
-          ? "High risk - only 0.5% of your money"
-          : "Neutral - maximum 1% of your money"
-      }. Trade with discipline and manage risk.`;
+          ? "High risk - risk only 0.2% of capital, max ₹15K investment"
+          : "Neutral setup - risk 0.3% of capital, max ₹25K investment"
+      }. Intraday trading requires strict discipline and quick exits.`;
     }
+
+    // Calculate volume range based on the trading parameters
+    const volumeRange = calculateVolumeRange(entryPrice, stopLoss, signal);
 
     const result = {
       signal: signal as "strong" | "caution" | "neutral" | "risk",
@@ -764,6 +885,7 @@ If no clear setup exists, return:
       targetPrice,
       stopLoss,
       tradingPlan: finalTradingPlan,
+      volumeRange,
     };
 
     console.log(`OpenAI analysis complete for ${indicators.symbol}:`, result);
@@ -1024,7 +1146,8 @@ export async function POST(request: NextRequest) {
       buyPrice,
       targetPrice,
       stopLoss,
-      tradingPlan;
+      tradingPlan,
+      volumeRange;
     try {
       const aiSignal = await getAdvancedOpenAISignal(indicators);
       signal = aiSignal.signal;
@@ -1034,6 +1157,7 @@ export async function POST(request: NextRequest) {
       targetPrice = aiSignal.targetPrice;
       stopLoss = aiSignal.stopLoss;
       tradingPlan = aiSignal.tradingPlan;
+      volumeRange = aiSignal.volumeRange;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "AI signal generation failed";
@@ -1092,6 +1216,13 @@ export async function POST(request: NextRequest) {
           target_price: targetPrice,
           stop_loss: stopLoss,
           trading_plan: tradingPlan,
+
+          // Volume Range Recommendations
+          min_volume: volumeRange.minVolume,
+          max_volume: volumeRange.maxVolume,
+          recommended_volume: volumeRange.recommendedVolume,
+          position_size_percent: volumeRange.positionSizePercent,
+          volume_range_text: volumeRange.volumeRangeText,
         },
       ])
       .select(

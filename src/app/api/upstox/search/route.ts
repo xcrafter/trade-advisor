@@ -12,7 +12,7 @@ function calculateRelevanceScore(
   const companyLower = companyClean.toLowerCase();
 
   // Exact symbol match gets highest score
-  if (symbolLower === queryLower) return 100;
+  if (symbolLower === queryLower) return 1000;
 
   // Symbol starts with query
   if (symbolLower.startsWith(queryLower)) return 90;
@@ -78,7 +78,16 @@ export async function GET(request: NextRequest) {
     // Search using multiple strategies for better results
     const queryLower = query.toLowerCase();
 
-    // Strategy 1: Direct symbol and company matches
+    // Strategy 1: Exact symbol match (highest priority)
+    const { data: exactSymbolMatches, error: exactError } = await dbQuery
+      .eq("symbol", query.toUpperCase())
+      .limit(limit);
+
+    if (exactError) {
+      console.log("Exact symbol search warning:", exactError.message);
+    }
+
+    // Strategy 2: Direct symbol and company matches
     const { data: directMatches, error: directError } = await dbQuery
       .or(`symbol.ilike.%${query}%,company_clean.ilike.%${query}%`)
       .limit(limit * 2); // Get more results to sort by relevance
@@ -115,6 +124,13 @@ export async function GET(request: NextRequest) {
 
     // Combine and deduplicate results
     const allMatches = new Map();
+
+    // Add exact symbol matches first (highest priority)
+    if (exactSymbolMatches) {
+      exactSymbolMatches.forEach((match) => {
+        allMatches.set(match.instrument_key, match);
+      });
+    }
 
     // Add direct matches
     if (directMatches) {

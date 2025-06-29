@@ -61,6 +61,15 @@ export default function StockAutocomplete({
   const [recommendations, setRecommendations] = useState<StockRecommendation[]>(
     []
   );
+
+  // Debug: Log when recommendations change
+  useEffect(() => {
+    console.log(
+      "Recommendations updated:",
+      recommendations.length,
+      recommendations
+    );
+  }, [recommendations]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [selectedStock, setSelectedStock] =
@@ -74,23 +83,41 @@ export default function StockAutocomplete({
       return;
     }
 
+    const searchUrl = `/api/upstox/search?q=${encodeURIComponent(
+      searchQuery.trim()
+    )}&limit=${limit}`;
+
+    console.log(`Attempting to fetch: ${searchUrl}`);
     setLoading(true);
     try {
-      const response = await fetch(
-        `/api/upstox/search?q=${encodeURIComponent(
-          searchQuery.trim()
-        )}&limit=${limit}`
-      );
+      // Test basic connectivity first
+      console.log("Testing connectivity...");
+      const response = await fetch(searchUrl);
 
       if (response.ok) {
         const data = await response.json();
+        console.log(
+          `Search for "${searchQuery}":`,
+          data.results?.length || 0,
+          "results"
+        );
+        console.log("Results:", data.results);
         setRecommendations(data.results || []);
       } else {
-        console.error("Failed to search stocks");
+        const errorText = await response.text();
+        console.error(
+          `Failed to search stocks: ${response.status} ${response.statusText}`,
+          errorText
+        );
         setRecommendations([]);
       }
     } catch (error) {
       console.error("Stock search error:", error);
+      console.error("Error details:", {
+        message: error instanceof Error ? error.message : "Unknown error",
+        stack: error instanceof Error ? error.stack : undefined,
+        name: error instanceof Error ? error.name : undefined,
+      });
       setRecommendations([]);
     } finally {
       setLoading(false);
@@ -196,7 +223,7 @@ export default function StockAutocomplete({
           className="w-[--radix-popover-trigger-width] p-0"
           align="start"
         >
-          <Command>
+          <Command shouldFilter={false}>
             <CommandInput
               placeholder="Type to search stocks..."
               value={query}
@@ -230,45 +257,60 @@ export default function StockAutocomplete({
 
               {!loading && recommendations.length > 0 && (
                 <CommandGroup>
-                  {recommendations.map((stock) => (
-                    <CommandItem
-                      key={`${stock.symbol}-${stock.exchange}`}
-                      value={`${stock.symbol}-${stock.exchange}`}
-                      onSelect={(value) => {
-                        if (value === `${stock.symbol}-${stock.exchange}`) {
-                          handleStockSelect(stock);
-                        }
-                      }}
-                      className="flex items-center justify-between p-3 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <TrendingUp className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                          <div className="font-medium text-sm">
-                            {stock.symbol}
+                  {recommendations.map((stock, index) => {
+                    const itemValue = `${stock.symbol}-${stock.exchange}`;
+                    console.log(
+                      `Rendering item ${index}:`,
+                      stock.symbol,
+                      stock.exchange,
+                      itemValue
+                    );
+                    return (
+                      <CommandItem
+                        key={itemValue}
+                        value={itemValue}
+                        onSelect={(value) => {
+                          console.log(
+                            "Item selected:",
+                            value,
+                            "Expected:",
+                            itemValue
+                          );
+                          if (value === itemValue) {
+                            handleStockSelect(stock);
+                          }
+                        }}
+                        className="flex items-center justify-between p-3 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <TrendingUp className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                            <div className="font-medium text-sm">
+                              {stock.symbol}
+                            </div>
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm text-muted-foreground truncate">
+                              {stock.companyClean}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <div className="text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded">
+                              {stock.exchange}
+                            </div>
+                            {getMatchTypeBadge(stock.matchType)}
                           </div>
                         </div>
 
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm text-muted-foreground truncate">
-                            {stock.companyClean}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <div className="text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded">
-                            {stock.exchange}
-                          </div>
-                          {getMatchTypeBadge(stock.matchType)}
-                        </div>
-                      </div>
-
-                      {selectedStock?.symbol === stock.symbol &&
-                        selectedStock?.exchange === stock.exchange && (
-                          <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                        )}
-                    </CommandItem>
-                  ))}
+                        {selectedStock?.symbol === stock.symbol &&
+                          selectedStock?.exchange === stock.exchange && (
+                            <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                          )}
+                      </CommandItem>
+                    );
+                  })}
                 </CommandGroup>
               )}
             </CommandList>
