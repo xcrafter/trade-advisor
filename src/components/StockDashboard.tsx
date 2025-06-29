@@ -1274,13 +1274,58 @@ export default function StockDashboard({
                             )}
 
                             {viewSettings.showVolumeData && (
-                              <TableCell>
-                                <div className="flex flex-col">
-                                  <span className="font-medium">
-                                    {latestSignal?.volume
-                                      ? formatVolume(latestSignal.volume)
-                                      : "N/A"}
-                                  </span>
+                              <TableCell className="w-[120px] min-w-[120px]">
+                                <div className="text-xs space-y-0">
+                                  <div className="flex items-center">
+                                    <span className="text-slate-600">
+                                      Current:{" "}
+                                    </span>
+                                    <span className="font-medium">
+                                      {latestSignal?.volume
+                                        ? formatVolume(latestSignal.volume)
+                                        : "N/A"}
+                                    </span>
+                                  </div>
+
+                                  {latestSignal?.volume_avg_intraday && (
+                                    <div className="flex items-center">
+                                      <span className="text-slate-600">
+                                        Avg:{" "}
+                                      </span>
+                                      <span className="font-medium">
+                                        {formatVolume(
+                                          latestSignal.volume_avg_intraday
+                                        )}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {latestSignal?.volume_max_intraday && (
+                                    <div className="flex items-center">
+                                      <span className="text-slate-600">
+                                        Max:{" "}
+                                      </span>
+                                      <span className="font-medium text-green-600">
+                                        {formatVolume(
+                                          latestSignal.volume_max_intraday
+                                        )}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {latestSignal?.volume_median_intraday && (
+                                    <div className="flex items-center">
+                                      <span className="text-slate-600">
+                                        Median:{" "}
+                                      </span>
+                                      <span className="font-medium text-blue-600">
+                                        {formatVolume(
+                                          latestSignal.volume_median_intraday
+                                        )}
+                                      </span>
+                                    </div>
+                                  )}
+
                                   {latestSignal?.volume_spike && (
                                     <Badge className="bg-orange-500 text-white text-xs w-fit mt-1">
                                       <Zap className="h-3 w-3 mr-1" />

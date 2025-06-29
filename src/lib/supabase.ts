@@ -48,6 +48,20 @@ export interface Signal {
   volume?: number; // Trading volume
   volume_spike?: boolean;
 
+  // 5-Day Volume Analysis
+  volume_5day_avg?: number; // 5-day average volume
+  volume_vs_5day_avg?: number; // Current volume as percentage of 5-day average
+  volume_trend_5day?: string; // Volume trend over 5 days (increasing/decreasing/stable)
+  volume_5day_high?: number; // Highest volume in last 5 days
+  volume_5day_low?: number; // Lowest volume in last 5 days
+
+  // Intraday Volume Statistics
+  volume_avg_intraday?: number; // Average volume per minute during intraday session
+  volume_max_intraday?: number; // Maximum volume in any single minute during intraday session
+  volume_median_intraday?: number; // Median volume per minute during intraday session
+  volume_total_intraday?: number; // Total volume across all intraday minutes
+  volume_candle_count?: number; // Number of 1-minute candles used for volume calculations
+
   // Trend and Alignment
   trend?: string; // Old column name (= trend_alignment)
   trend_alignment?: string; // New column name

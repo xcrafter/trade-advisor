@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import StockAutocomplete from "@/components/StockAutocomplete";
 import {
@@ -76,17 +76,7 @@ export default function AnalyzePage() {
   const [selectedStocks, setSelectedStocks] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
 
-  useEffect(() => {
-    fetchSessions();
-  }, []);
-
-  useEffect(() => {
-    if (currentSession) {
-      fetchStocksAndSignals();
-    }
-  }, [currentSession]);
-
-  const fetchStocksAndSignals = async () => {
+  const fetchStocksAndSignals = useCallback(async () => {
     if (!currentSession) return;
 
     try {
@@ -120,9 +110,9 @@ export default function AnalyzePage() {
     } catch (error) {
       console.error("Failed to fetch stocks and signals:", error);
     }
-  };
+  }, [currentSession]);
 
-  const fetchSessions = async () => {
+  const fetchSessions = useCallback(async () => {
     try {
       console.log("Fetching sessions...");
       const response = await fetch("/api/sessions");
@@ -148,7 +138,17 @@ export default function AnalyzePage() {
     } catch (error) {
       console.error("Failed to fetch sessions:", error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchSessions();
+  }, [fetchSessions]);
+
+  useEffect(() => {
+    if (currentSession) {
+      fetchStocksAndSignals();
+    }
+  }, [currentSession, fetchStocksAndSignals]);
 
   const createDefaultSession = async () => {
     try {
@@ -950,6 +950,7 @@ export default function AnalyzePage() {
                           <TableHead>VWAP</TableHead>
                           <TableHead>SMA/EMA</TableHead>
                           <TableHead>Volume</TableHead>
+                          <TableHead>5-Day Volume</TableHead>
                           <TableHead>Trend</TableHead>
                           <TableHead>Score</TableHead>
                           <TableHead>Signal</TableHead>
@@ -970,7 +971,6 @@ export default function AnalyzePage() {
                         {stocks.map((stock) => {
                           const latestSignal = stock.latestSignal;
                           const isSelected = selectedStocks.has(stock.id);
-                          const isAnalyzing = analyzing === stock.id;
 
                           return (
                             <TableRow
@@ -1088,18 +1088,168 @@ export default function AnalyzePage() {
                               </TableCell>
 
                               {/* Volume Column */}
-                              <TableCell>
-                                <div className="flex flex-col">
-                                  <span className="font-medium">
-                                    {latestSignal?.volume
-                                      ? latestSignal.volume.toLocaleString()
-                                      : "N/A"}
-                                  </span>
+                              <TableCell className="w-[120px] min-w-[120px]">
+                                <div className="text-xs space-y-0">
+                                  <div className="flex items-center">
+                                    <span className="text-slate-600">
+                                      Current:{" "}
+                                    </span>
+                                    <span className="font-medium">
+                                      {latestSignal?.volume
+                                        ? (latestSignal.volume / 1000).toFixed(
+                                            0
+                                          ) + "K"
+                                        : "N/A"}
+                                    </span>
+                                  </div>
+
+                                  {latestSignal?.volume_avg_intraday && (
+                                    <div className="flex items-center">
+                                      <span className="text-slate-600">
+                                        Avg:{" "}
+                                      </span>
+                                      <span className="font-medium">
+                                        {(
+                                          latestSignal.volume_avg_intraday /
+                                          1000
+                                        ).toFixed(0)}
+                                        K
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {latestSignal?.volume_max_intraday && (
+                                    <div className="flex items-center">
+                                      <span className="text-slate-600">
+                                        Max:{" "}
+                                      </span>
+                                      <span className="font-medium text-green-600">
+                                        {(
+                                          latestSignal.volume_max_intraday /
+                                          1000
+                                        ).toFixed(0)}
+                                        K
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {latestSignal?.volume_median_intraday && (
+                                    <div className="flex items-center">
+                                      <span className="text-slate-600">
+                                        Median:{" "}
+                                      </span>
+                                      <span className="font-medium text-blue-600">
+                                        {(
+                                          latestSignal.volume_median_intraday /
+                                          1000
+                                        ).toFixed(0)}
+                                        K
+                                      </span>
+                                    </div>
+                                  )}
+
                                   {latestSignal?.volume_spike && (
                                     <Badge className="bg-orange-500 text-white text-xs w-fit mt-1">
                                       <Zap className="h-3 w-3 mr-1" />
                                       Spike
                                     </Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+
+                              {/* 5-Day Volume Column */}
+                              <TableCell className="w-[200px] min-w-[200px]">
+                                <div className="text-xs space-y-1">
+                                  {latestSignal?.volume_5day_avg ? (
+                                    <>
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-600">
+                                          5D Avg:
+                                        </span>
+                                        <span className="font-medium">
+                                          {(
+                                            latestSignal.volume_5day_avg / 1000
+                                          ).toFixed(0)}
+                                          K
+                                        </span>
+                                      </div>
+
+                                      {latestSignal.volume_vs_5day_avg && (
+                                        <div className="flex justify-between">
+                                          <span className="text-slate-600">
+                                            vs Avg:
+                                          </span>
+                                          <Badge
+                                            className={
+                                              latestSignal.volume_vs_5day_avg >
+                                              150
+                                                ? "bg-green-600 text-white text-xs"
+                                                : latestSignal.volume_vs_5day_avg >
+                                                  100
+                                                ? "bg-blue-500 text-white text-xs"
+                                                : latestSignal.volume_vs_5day_avg >
+                                                  50
+                                                ? "bg-yellow-500 text-white text-xs"
+                                                : "bg-red-500 text-white text-xs"
+                                            }
+                                          >
+                                            {latestSignal.volume_vs_5day_avg.toFixed(
+                                              0
+                                            )}
+                                            %
+                                          </Badge>
+                                        </div>
+                                      )}
+
+                                      {latestSignal.volume_trend_5day && (
+                                        <div className="flex justify-between">
+                                          <span className="text-slate-600">
+                                            Trend:
+                                          </span>
+                                          <Badge
+                                            className={
+                                              latestSignal.volume_trend_5day ===
+                                              "increasing"
+                                                ? "bg-green-500 text-white text-xs"
+                                                : latestSignal.volume_trend_5day ===
+                                                  "decreasing"
+                                                ? "bg-red-500 text-white text-xs"
+                                                : "bg-gray-500 text-white text-xs"
+                                            }
+                                          >
+                                            {latestSignal.volume_trend_5day ===
+                                            "increasing"
+                                              ? "↗️"
+                                              : latestSignal.volume_trend_5day ===
+                                                "decreasing"
+                                              ? "↘️"
+                                              : "→"}
+                                          </Badge>
+                                        </div>
+                                      )}
+
+                                      <div className="text-xs text-slate-500 mt-1">
+                                        Range:{" "}
+                                        {latestSignal.volume_5day_low
+                                          ? (
+                                              latestSignal.volume_5day_low /
+                                              1000
+                                            ).toFixed(0)
+                                          : "N/A"}
+                                        K -{" "}
+                                        {latestSignal.volume_5day_high
+                                          ? (
+                                              latestSignal.volume_5day_high /
+                                              1000
+                                            ).toFixed(0)
+                                          : "N/A"}
+                                        K
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <span className="text-slate-400">
+                                      No 5D data
+                                    </span>
                                   )}
                                 </div>
                               </TableCell>

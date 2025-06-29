@@ -284,7 +284,6 @@ async function shouldRefreshData(
       .limit(1);
 
     if (error || !signals || signals.length === 0) {
-      console.log(`No existing data for ${symbol}, refresh needed`);
       return true;
     }
 
@@ -292,14 +291,6 @@ async function shouldRefreshData(
     const signalAge = Date.now() - new Date(latestSignal.created_at).getTime();
 
     const shouldRefresh = signalAge > CACHE_DURATION_MS;
-    console.log(
-      `${symbol} data age: ${Math.round(
-        signalAge / 1000
-      )}s, cache duration: ${Math.round(
-        CACHE_DURATION_MS / 1000
-      )}s, refresh needed: ${shouldRefresh}`
-    );
-
     return shouldRefresh;
   } catch (error) {
     console.error(`Error checking refresh status for ${symbol}:`, error);
@@ -307,54 +298,185 @@ async function shouldRefreshData(
   }
 }
 
-// Twelvedata data fetching (primary source)
-async function fetchUpstoxCandles(
-  instrumentKey: string
+// Calculate 5-day volume metrics
+function calculate5DayVolumeMetrics(dailyVolumes: number[]): {
+  volume_5day_avg: number;
+  volume_vs_5day_avg: number;
+  volume_trend_5day: string;
+  volume_5day_high: number;
+  volume_5day_low: number;
+} {
+  if (dailyVolumes.length < 5) {
+    return {
+      volume_5day_avg: 0,
+      volume_vs_5day_avg: 0,
+      volume_trend_5day: "insufficient_data",
+      volume_5day_high: 0,
+      volume_5day_low: 0,
+    };
+  }
+
+  // Get last 5 days of volume data
+  const last5Days = dailyVolumes.slice(-5);
+  const currentVolume = dailyVolumes[dailyVolumes.length - 1];
+
+  // Calculate 5-day average
+  const volume_5day_avg = last5Days.reduce((sum, vol) => sum + vol, 0) / 5;
+
+  // Calculate current vs 5-day average percentage
+  const volume_vs_5day_avg =
+    volume_5day_avg > 0 ? (currentVolume / volume_5day_avg) * 100 : 0;
+
+  // Calculate trend (compare first 2 days vs last 2 days)
+  const firstHalf =
+    last5Days.slice(0, 2).reduce((sum, vol) => sum + vol, 0) / 2;
+  const secondHalf = last5Days.slice(-2).reduce((sum, vol) => sum + vol, 0) / 2;
+
+  let volume_trend_5day: string;
+  if (secondHalf > firstHalf * 1.1) {
+    volume_trend_5day = "increasing";
+  } else if (secondHalf < firstHalf * 0.9) {
+    volume_trend_5day = "decreasing";
+  } else {
+    volume_trend_5day = "stable";
+  }
+
+  // Calculate high and low
+  const volume_5day_high = Math.max(...last5Days);
+  const volume_5day_low = Math.min(...last5Days);
+
+  const result = {
+    volume_5day_avg: Math.round(volume_5day_avg),
+    volume_vs_5day_avg: Math.round(volume_vs_5day_avg * 100) / 100,
+    volume_trend_5day,
+    volume_5day_high,
+    volume_5day_low,
+  };
+
+  return result;
+}
+
+// Calculate intraday volume statistics
+function calculateIntradayVolumeStats(volumes: number[]): {
+  volume_avg_intraday: number;
+  volume_max_intraday: number;
+  volume_median_intraday: number;
+  volume_total_intraday: number;
+  volume_candle_count: number;
+} {
+  if (volumes.length === 0) {
+    return {
+      volume_avg_intraday: 0,
+      volume_max_intraday: 0,
+      volume_median_intraday: 0,
+      volume_total_intraday: 0,
+      volume_candle_count: 0,
+    };
+  }
+
+  // Calculate basic statistics
+  const volume_total_intraday = volumes.reduce((sum, vol) => sum + vol, 0);
+  const volume_avg_intraday = Math.round(
+    volume_total_intraday / volumes.length
+  );
+  const volume_max_intraday = Math.max(...volumes);
+  const volume_candle_count = volumes.length;
+
+  // Calculate median
+  const sortedVolumes = [...volumes].sort((a, b) => a - b);
+  let volume_median_intraday: number;
+  const midIndex = Math.floor(sortedVolumes.length / 2);
+
+  if (sortedVolumes.length % 2 === 0) {
+    // Even number of elements - average of two middle values
+    volume_median_intraday = Math.round(
+      (sortedVolumes[midIndex - 1] + sortedVolumes[midIndex]) / 2
+    );
+  } else {
+    // Odd number of elements - middle value
+    volume_median_intraday = sortedVolumes[midIndex];
+  }
+
+  return {
+    volume_avg_intraday,
+    volume_max_intraday,
+    volume_median_intraday,
+    volume_total_intraday,
+    volume_candle_count,
+  };
+}
+
+// Fetch daily historical data for 5-day volume analysis
+// Helper function to check if a date is a weekday (Monday to Friday)
+function isWeekday(date: Date): boolean {
+  const day = date.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  return day >= 1 && day <= 5; // Monday (1) to Friday (5)
+}
+
+// Helper function to get the last N trading days (weekdays only)
+function getLastTradingDays(targetTradingDays: number): {
+  startDate: Date;
+  endDate: Date;
+} {
+  // eslint-disable-next-line prefer-const
+  let endDate = new Date();
+
+  // If today is a weekend, go back to the last Friday
+  while (!isWeekday(endDate)) {
+    endDate.setDate(endDate.getDate() - 1);
+  }
+
+  // Count backwards to find enough trading days
+  // eslint-disable-next-line prefer-const
+  let currentDate = new Date(endDate);
+  let tradingDaysFound = 0;
+
+  while (tradingDaysFound < targetTradingDays) {
+    if (isWeekday(currentDate)) {
+      tradingDaysFound++;
+    }
+    if (tradingDaysFound < targetTradingDays) {
+      currentDate.setDate(currentDate.getDate() - 1);
+    }
+  }
+
+  return { startDate: currentDate, endDate };
+}
+
+// function to fetch 5 day volume data
+async function fetchUpstoxDailyCandles(
+  instrumentKey: string,
+  targetTradingDays: number = 8 // Target 8 trading days to ensure we get at least 5
 ): Promise<UpstoxCandle[]> {
   const apiKey = process.env.UPSTOX_API_KEY;
-  console.log(`Upstox API key status: ${apiKey ? "Found" : "Not found"}`);
-  console.log(`API key length: ${apiKey ? apiKey.length : 0}`);
 
   if (!apiKey) {
-    console.error("❌ UPSTOX_API_KEY not found in environment variables");
-    console.log(
-      "Available env keys:",
-      Object.keys(process.env).filter((key) => key.includes("UPSTOX"))
-    );
-    throw new Error(
-      "UPSTOX_API_KEY not configured. Please add your Upstox API key to environment variables."
-    );
+    throw new Error("UPSTOX_API_KEY not configured");
   }
 
   try {
+    // Calculate date range for Indian market trading days (Mon-Fri only)
+    const { startDate, endDate } = getLastTradingDays(targetTradingDays);
+
+    const endDateStr = endDate.toISOString().split("T")[0]; // YYYY-MM-DD
+    const startDateStr = startDate.toISOString().split("T")[0]; // YYYY-MM-DD
+
     console.log(
-      `🔄 Fetching real market data from Upstox for ${instrumentKey}`
+      `📊 5-Day Volume: ${startDateStr} to ${endDateStr} (${startDate.toLocaleDateString(
+        "en-IN",
+        { weekday: "short" }
+      )} to ${endDate.toLocaleDateString("en-IN", { weekday: "short" })})`
     );
 
-    // Fetch 1-minute intraday data from Upstox API
-    // const response = await axios.get(
-    //   `https://api.upstox.com/v3/historical-candle/intraday/${instrumentKey}/minutes/1`,
-    //   {
-    //     headers: {
-    //       Authorization: `Bearer ${apiKey}`,
-    //     },
-    //     timeout: 15000,
-    //   }
-    // );
-
-    // Fetch historical upstox candle date for testing
-    const response = await axios.get(
-      `https://api.upstox.com/v3/historical-candle/${instrumentKey}/minutes/1/2025-06-24/2025-06-23`,
-      {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-        timeout: 15000,
-      }
-    );
-
-    console.log(`Upstox response status:`, response.data.status);
-    console.log(`Upstox response keys:`, Object.keys(response.data));
+    // Fetch daily data from Upstox API
+    const apiUrl = `https://api.upstox.com/v3/historical-candle/${instrumentKey}/days/1/${endDateStr}/${startDateStr}`;
+    console.log("apiUrl", apiUrl);
+    const response = await axios.get(apiUrl, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      timeout: 15000,
+    });
 
     if (
       response.data.status !== "success" ||
@@ -362,16 +484,157 @@ async function fetchUpstoxCandles(
       !response.data.data.candles ||
       response.data.data.candles.length === 0
     ) {
-      console.error("❌ Upstox API: No valid market data found");
-      console.log("Response data:", response.data);
+      throw new Error("No daily market data available from Upstox API");
+    }
+
+    // Convert Upstox format to our standard format and filter for weekdays only
+    const allCandles: UpstoxCandle[] = response.data.data.candles.map(
+      (candle: [string, number, number, number, number, number, number]) => ({
+        timestamp: candle[0],
+        open: candle[1],
+        high: candle[2],
+        low: candle[3],
+        close: candle[4],
+        volume: candle[5],
+      })
+    );
+
+    // Filter out weekends (keep only Monday-Friday trading days)
+    const candles = allCandles.filter((candle) => {
+      const candleDate = new Date(candle.timestamp);
+      return isWeekday(candleDate);
+    });
+
+    // Sort by timestamp (oldest first)
+    candles.sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    // Extract and log volume data specifically for 5-day analysis
+    const volumes = candles.map((c) => c.volume);
+    console.log(
+      `📊 5-Day Volume Data: [${volumes
+        .slice(-5)
+        .map((v) => v.toLocaleString())
+        .join(", ")}] (${candles.length} trading days)`
+    );
+
+    // Debug: Show raw volume values to understand scale
+    console.log(
+      `📊 5-Day Volume Raw Values: [${volumes.slice(-5).join(", ")}]`
+    );
+
+    return candles;
+  } catch (error: unknown) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error occurred";
+    console.error("❌ Daily data fetch error:", errorMessage);
+    throw new Error(`Failed to fetch daily market data: ${errorMessage}`);
+  }
+}
+
+async function fetchUpstoxCandles(
+  instrumentKey: string
+): Promise<UpstoxCandle[]> {
+  const apiKey = process.env.UPSTOX_API_KEY;
+
+  if (!apiKey) {
+    throw new Error(
+      "UPSTOX_API_KEY not configured. Please add your Upstox API key to environment variables."
+    );
+  }
+
+  try {
+    // Get current date and yesterday for realistic historical data
+    // Get the most recent weekday dates for intraday data
+    const today = new Date();
+    const endDate = new Date(today);
+    let startDate = new Date(today);
+
+    // If today is weekend, use Friday as end date
+    if (endDate.getDay() === 0) {
+      // Sunday
+      endDate.setDate(endDate.getDate() - 2); // Go to Friday
+    } else if (endDate.getDay() === 6) {
+      // Saturday
+      endDate.setDate(endDate.getDate() - 1); // Go to Friday
+    }
+
+    // Set start date to previous weekday
+    startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - 1);
+
+    // If start date falls on weekend, adjust it
+    if (startDate.getDay() === 0) {
+      // Sunday
+      startDate.setDate(startDate.getDate() - 2); // Go to Friday
+    } else if (startDate.getDay() === 6) {
+      // Saturday
+      startDate.setDate(startDate.getDate() - 1); // Go to Friday
+    }
+
+    const todayStr = endDate.toISOString().split("T")[0]; // YYYY-MM-DD
+    const yesterdayStr = startDate.toISOString().split("T")[0]; // YYYY-MM-DD
+
+    const dayNames = [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+    ];
+    console.log(
+      `📊 Intraday Data: Fetching ${yesterdayStr} (${
+        dayNames[startDate.getDay()]
+      }) to ${todayStr} (${dayNames[endDate.getDay()]})`
+    );
+
+    // Try live intraday data first, fallback to historical
+    let response;
+    try {
+      // Live intraday data (if market is open)
+      response = await axios.get(
+        `https://api.upstox.com/v3/historical-candle/intraday/${instrumentKey}/minutes/1`,
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+          },
+          timeout: 15000,
+        }
+      );
+      if (response?.data?.data?.candles?.length === 0) {
+        throw new Error("No live intraday data available");
+      }
+      console.log(`📊 Intraday Data: Using live data`);
+    } catch {
+      // Fallback to recent historical data
+      response = await axios.get(
+        `https://api.upstox.com/v3/historical-candle/${instrumentKey}/minutes/1/${todayStr}/${yesterdayStr}`,
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+          },
+          timeout: 15000,
+        }
+      );
+      console.log(
+        `📊 Intraday Data: Using historical data (${yesterdayStr} to ${todayStr})`
+      );
+    }
+
+    if (
+      response.data.status !== "success" ||
+      !response.data.data ||
+      !response.data.data.candles ||
+      response.data.data.candles.length === 0
+    ) {
       throw new Error(
         "No market data available from Upstox API. The market might be closed or the instrument might be invalid."
       );
     }
-
-    console.log(
-      `✅ Successfully fetched ${response.data.data.candles.length} data points from Upstox for ${instrumentKey}`
-    );
 
     // Convert Upstox format to our standard format
     // Upstox candle format: [timestamp, open, high, low, close, volume, oi]
@@ -392,9 +655,48 @@ async function fetchUpstoxCandles(
         new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
 
+    // Debug: Show intraday volume sample to understand scale
+    const intraVolumes = candles.map((c) => c.volume);
+    const currentVolume = intraVolumes[intraVolumes.length - 1];
+    const avgIntraVolume =
+      intraVolumes.reduce((sum, vol) => sum + vol, 0) / intraVolumes.length;
+    const totalIntraVolume = intraVolumes.reduce((sum, vol) => sum + vol, 0);
+
     console.log(
-      `✅ Processed ${candles.length} candles from Upstox for ${instrumentKey}`
+      `📊 Intraday Volume (1-min): Current=${currentVolume.toLocaleString()}, Avg=${Math.round(
+        avgIntraVolume
+      ).toLocaleString()}, Total=${totalIntraVolume.toLocaleString()}, Candles=${
+        candles.length
+      }`
     );
+
+    // Analyze volume intensity
+    const volumeIntensity =
+      currentVolume > 50000
+        ? "HIGH"
+        : currentVolume > 10000
+        ? "MEDIUM"
+        : currentVolume > 1000
+        ? "LOW"
+        : "VERY LOW";
+    console.log(
+      `📊 Volume Analysis: Current minute=${currentVolume.toLocaleString()} shares (${volumeIntensity} intensity) across ${
+        candles.length
+      } minutes.`
+    );
+
+    // Show realistic daily projection
+    if (candles.length > 0) {
+      const avgVolumePerMinute = totalIntraVolume / candles.length;
+      const projectedDailyVolume = avgVolumePerMinute * 375; // 375 minutes in trading day
+      console.log(
+        `📊 Volume Projection: Avg per minute=${Math.round(
+          avgVolumePerMinute
+        ).toLocaleString()}, Projected full day=${Math.round(
+          projectedDailyVolume
+        ).toLocaleString()}`
+      );
+    }
 
     return candles;
   } catch (error: unknown) {
@@ -546,8 +848,6 @@ async function getAdvancedOpenAISignal(
   try {
     // Check if OpenAI API key is available
     const apiKey = process.env.OPENAI_API_KEY;
-    console.log(`OpenAI API key status: ${apiKey ? "Found" : "Not found"}`);
-    console.log(`OpenAI API key length: ${apiKey ? apiKey.length : 0}`);
 
     if (!apiKey) {
       console.error("❌ OPENAI_API_KEY not found in environment variables");
@@ -605,9 +905,6 @@ GUIDELINES:
 - Round all prices to nearest ₹0.10
 - Include percentage calculations in trading_plan`;
 
-    console.log(`Making OpenAI API request for ${indicators.symbol}`);
-    console.log(`Prompt length: ${prompt.length} characters`);
-
     const requestPayload = {
       model: "gpt-3.5-turbo",
       messages: [
@@ -654,11 +951,6 @@ If no clear setup exists, return:
       response_format: { type: "json_object" },
     };
 
-    console.log(
-      `OpenAI request payload:`,
-      JSON.stringify(requestPayload, null, 2)
-    );
-
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       requestPayload,
@@ -671,44 +963,27 @@ If no clear setup exists, return:
       }
     );
 
-    console.log(`OpenAI API response received for ${indicators.symbol}`);
-    console.log(`Response status: ${response.status}`);
-    console.log(`Response headers:`, response.headers);
-    console.log(`Full response data:`, JSON.stringify(response.data, null, 2));
-
     // Check response structure
     if (!response.data) {
-      console.error("No response data from OpenAI");
       throw new Error("No response data from OpenAI");
     }
 
     if (!response.data.choices) {
-      console.error("No choices in OpenAI response:", response.data);
       throw new Error("No choices in OpenAI response");
     }
 
     if (!response.data.choices[0]) {
-      console.error(
-        "No first choice in OpenAI response:",
-        response.data.choices
-      );
       throw new Error("No first choice in OpenAI response");
     }
 
     const choice = response.data.choices[0];
-    console.log(`First choice:`, JSON.stringify(choice, null, 2));
-
     const content = choice?.message?.content || "";
-    console.log(`Extracted content: "${content}"`);
-    console.log(`Content length: ${content.length}`);
 
     if (!content) {
-      console.error("No content in OpenAI response message");
       throw new Error("No content in OpenAI response message");
     }
 
     // Parse JSON response
-    console.log(`Raw OpenAI content: "${content}"`);
 
     let direction = "LONG";
     let signal = "neutral";
@@ -731,10 +1006,7 @@ If no clear setup exists, return:
         jsonContent = jsonContent.replace(/```\s*/, "").replace(/```\s*$/, "");
       }
 
-      console.log(`Cleaned JSON content: "${jsonContent}"`);
-
       const parsedResponse = JSON.parse(jsonContent);
-      console.log(`Parsed JSON:`, parsedResponse);
 
       // Extract values from JSON
       if (
@@ -791,7 +1063,6 @@ If no clear setup exists, return:
       }
     } catch (parseError) {
       console.error("Failed to parse JSON response:", parseError);
-      console.log("Falling back to default values and attempting text parsing");
 
       // Fallback to simple text parsing if JSON fails
       const lines = content.trim().split("\n");
@@ -805,14 +1076,6 @@ If no clear setup exists, return:
         else if (trimmedLine.includes("risk")) signal = "risk";
       }
     }
-
-    console.log(`Extracted direction: ${direction}`);
-    console.log(`Extracted signal: ${signal}`);
-    console.log(`Extracted explanation: ${explanation}`);
-    console.log(`Extracted entry price: ${entryPrice}`);
-    console.log(`Extracted target price: ${targetPrice}`);
-    console.log(`Extracted stop loss: ${stopLoss}`);
-    console.log(`Extracted trading plan: ${tradingPlan}`);
 
     // Use parsed trading plan or generate consistent one
     let finalTradingPlan = tradingPlan;
@@ -887,8 +1150,6 @@ If no clear setup exists, return:
       tradingPlan: finalTradingPlan,
       volumeRange,
     };
-
-    console.log(`OpenAI analysis complete for ${indicators.symbol}:`, result);
 
     return result;
   } catch (error) {
@@ -1022,10 +1283,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(
-      `Analyzing stock ${stock.symbol} (ID: ${stock.id}) for session ${stock.session.session_date}`
-    );
-
     // Check if we need to refresh data based on database cache
     const needsRefresh = await shouldRefreshData(stock.symbol, stockId);
 
@@ -1058,8 +1315,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(signalWithCacheInfo);
       }
     }
-
-    console.log(`Fetching fresh market data for ${stock.symbol}`);
 
     // Check if stock has instrument_key
     if (!stock.instrument_key) {
@@ -1104,11 +1359,64 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Fetch daily historical data for 5-day volume analysis
+    let dailyCandles: UpstoxCandle[] = [];
+    let volume5DayMetrics = {
+      volume_5day_avg: 0,
+      volume_vs_5day_avg: 0,
+      volume_trend_5day: "insufficient_data",
+      volume_5day_high: 0,
+      volume_5day_low: 0,
+    };
+
+    try {
+      dailyCandles = await fetchUpstoxDailyCandles(stock.instrument_key);
+
+      if (dailyCandles.length >= 5) {
+        const dailyVolumes = dailyCandles.map((c: UpstoxCandle) => c.volume);
+        volume5DayMetrics = calculate5DayVolumeMetrics(dailyVolumes);
+        console.log(
+          `📊 5-Day Volume Metrics: Avg=${volume5DayMetrics.volume_5day_avg.toLocaleString()}, Current vs Avg=${
+            volume5DayMetrics.volume_vs_5day_avg
+          }%, Trend=${volume5DayMetrics.volume_trend_5day}`
+        );
+      } else {
+        console.log(
+          `⚠️ 5-Day Volume: Insufficient data (${dailyCandles.length} days)`
+        );
+      }
+    } catch (error) {
+      console.error(`❌ 5-Day Volume: Failed to fetch data:`, error);
+      // Continue with analysis even if daily data fails
+    }
+
     // Calculate all advanced technical indicators
     const prices = candles.map((c: UpstoxCandle) => c.close);
     const volumes = candles.map((c: UpstoxCandle) => c.volume);
     const currentPrice = prices[prices.length - 1];
     const currentVolume = volumes[volumes.length - 1];
+
+    // Calculate intraday volume statistics
+    const intradayVolumeStats = calculateIntradayVolumeStats(volumes);
+    console.log(
+      `📊 Intraday Volume Stats: Avg=${intradayVolumeStats.volume_avg_intraday.toLocaleString()}, Max=${intradayVolumeStats.volume_max_intraday.toLocaleString()}, Median=${intradayVolumeStats.volume_median_intraday.toLocaleString()}, Total=${intradayVolumeStats.volume_total_intraday.toLocaleString()}, Candles=${
+        intradayVolumeStats.volume_candle_count
+      }`
+    );
+
+    // Volume comparison: Daily vs Intraday
+    const totalIntradayVolume = volumes.reduce((sum, vol) => sum + vol, 0);
+    const avgDailyVolume = volume5DayMetrics.volume_5day_avg;
+    if (avgDailyVolume > 0) {
+      console.log(
+        `📊 Volume Comparison: Today's intraday total=${totalIntradayVolume.toLocaleString()}, 5-day daily avg=${avgDailyVolume.toLocaleString()}`
+      );
+      console.log(
+        `📊 Volume Scale: Current minute=${currentVolume.toLocaleString()}, vs typical daily=${avgDailyVolume.toLocaleString()} (${Math.round(
+          avgDailyVolume / currentVolume
+        )}x larger)`
+      );
+    }
 
     const vwap = calculateVWAP(candles);
     const rsi_14 = calculateRSI(prices, 14);
@@ -1177,61 +1485,110 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Save comprehensive analysis to database
-    const { data: signalData, error: signalError } = await supabase
-      .from("signals")
-      .insert([
-        {
-          stock_id: stockId,
-          symbol: stock.symbol,
-          timestamp: indicators.timestamp,
-          price: indicators.price,
+    // Prepare the base signal data
+    const baseSignalData = {
+      stock_id: stockId,
+      symbol: stock.symbol,
+      timestamp: indicators.timestamp,
+      price: indicators.price,
 
-          // Old column names (for backward compatibility)
-          rsi: indicators.rsi_14,
-          vwap: indicators.vwap,
-          sma: indicators.sma_20,
-          volume_spike: indicators.volume_spike,
-          trend: indicators.trend_alignment,
+      // Old column names (for backward compatibility)
+      rsi: indicators.rsi_14,
+      vwap: indicators.vwap,
+      sma: indicators.sma_20,
+      volume_spike: indicators.volume_spike,
+      trend: indicators.trend_alignment,
 
-          // New column names
-          rsi_14: indicators.rsi_14,
-          sma_20: indicators.sma_20,
-          ema_9: indicators.ema_9,
-          atr_14: indicators.atr_14,
-          volume: currentVolume,
-          trend_alignment: indicators.trend_alignment,
-          breakout_day_high: indicators.breakout_day_high,
-          breakout_prev_day_range: indicators.breakout_prev_day_range,
-          opening_range_breakout: indicators.opening_range_breakout,
-          clean_setup: indicators.clean_setup,
-          intraday_score: indicators.intraday_score,
+      // New column names
+      rsi_14: indicators.rsi_14,
+      sma_20: indicators.sma_20,
+      ema_9: indicators.ema_9,
+      atr_14: indicators.atr_14,
+      volume: currentVolume,
+      trend_alignment: indicators.trend_alignment,
+      breakout_day_high: indicators.breakout_day_high,
+      breakout_prev_day_range: indicators.breakout_prev_day_range,
+      opening_range_breakout: indicators.opening_range_breakout,
+      clean_setup: indicators.clean_setup,
+      intraday_score: indicators.intraday_score,
 
-          signal,
-          llm_opinion: opinion,
+      signal,
+      llm_opinion: opinion,
 
-          // Trading Plan
-          direction: direction,
-          buy_price: buyPrice,
-          target_price: targetPrice,
-          stop_loss: stopLoss,
-          trading_plan: tradingPlan,
+      // Trading Plan
+      direction: direction,
+      buy_price: buyPrice,
+      target_price: targetPrice,
+      stop_loss: stopLoss,
+      trading_plan: tradingPlan,
 
-          // Volume Range Recommendations
-          min_volume: volumeRange.minVolume,
-          max_volume: volumeRange.maxVolume,
-          recommended_volume: volumeRange.recommendedVolume,
-          position_size_percent: volumeRange.positionSizePercent,
-          volume_range_text: volumeRange.volumeRangeText,
-        },
-      ])
-      .select(
+      // Volume Range Recommendations
+      min_volume: volumeRange.minVolume,
+      max_volume: volumeRange.maxVolume,
+      recommended_volume: volumeRange.recommendedVolume,
+      position_size_percent: volumeRange.positionSizePercent,
+      volume_range_text: volumeRange.volumeRangeText,
+    };
+
+    // Try to save with 5-day volume data, fallback if columns don't exist
+    let signalData, signalError;
+
+    // First attempt: try with 5-day volume data and intraday stats
+    try {
+      const signalDataWithVolume = {
+        ...baseSignalData,
+        volume_5day_avg: volume5DayMetrics.volume_5day_avg,
+        volume_vs_5day_avg: volume5DayMetrics.volume_vs_5day_avg,
+        volume_trend_5day: volume5DayMetrics.volume_trend_5day,
+        volume_5day_high: volume5DayMetrics.volume_5day_high,
+        volume_5day_low: volume5DayMetrics.volume_5day_low,
+        volume_avg_intraday: intradayVolumeStats.volume_avg_intraday,
+        volume_max_intraday: intradayVolumeStats.volume_max_intraday,
+        volume_median_intraday: intradayVolumeStats.volume_median_intraday,
+        volume_total_intraday: intradayVolumeStats.volume_total_intraday,
+        volume_candle_count: intradayVolumeStats.volume_candle_count,
+      };
+
+      const result = await supabase
+        .from("signals")
+        .insert([signalDataWithVolume])
+        .select(
+          `
+          *,
+          stock:stocks(*)
         `
-        *,
-        stock:stocks(*)
-      `
-      )
-      .single();
+        )
+        .single();
+
+      signalData = result.data;
+      signalError = result.error;
+
+      if (!signalError) {
+        console.log(
+          "✅ Volume Data: Saved 5-day and intraday statistics to database"
+        );
+      }
+    } catch (error) {
+      console.log("⚠️ Volume Data: New columns not found, using fallback");
+      signalError = error;
+    }
+
+    // Fallback: save without 5-day volume data if first attempt failed
+    if (signalError) {
+      const result = await supabase
+        .from("signals")
+        .insert([baseSignalData])
+        .select(
+          `
+          *,
+          stock:stocks(*)
+        `
+        )
+        .single();
+
+      signalData = result.data;
+      signalError = result.error;
+    }
 
     if (signalError) {
       console.error("Database error:", signalError);
