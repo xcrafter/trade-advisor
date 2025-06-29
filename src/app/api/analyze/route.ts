@@ -828,7 +828,21 @@ function calculateVolumeRange(
 
 // Enhanced OpenAI signal generation
 async function getAdvancedOpenAISignal(
-  indicators: AdvancedTechnicalIndicators
+  indicators: AdvancedTechnicalIndicators,
+  volume5DayMetrics?: {
+    volume_5day_avg: number;
+    volume_vs_5day_avg: number;
+    volume_trend_5day: string;
+    volume_5day_high: number;
+    volume_5day_low: number;
+  },
+  intradayVolumeStats?: {
+    volume_avg_intraday: number;
+    volume_max_intraday: number;
+    volume_median_intraday: number;
+    volume_total_intraday: number;
+    volume_candle_count: number;
+  }
 ): Promise<{
   signal: string;
   opinion: string;
@@ -856,6 +870,29 @@ async function getAdvancedOpenAISignal(
       );
     }
 
+    // Build volume analysis section
+    let volumeAnalysis = "";
+    if (volume5DayMetrics && volume5DayMetrics.volume_5day_avg > 0) {
+      volumeAnalysis += `
+5-DAY VOLUME ANALYSIS:
+Average Volume (5D): ${volume5DayMetrics.volume_5day_avg.toLocaleString()} shares
+Current vs 5D Avg: ${volume5DayMetrics.volume_vs_5day_avg.toFixed(1)}%
+Volume Trend (5D): ${volume5DayMetrics.volume_trend_5day}
+5D Volume Range: ${volume5DayMetrics.volume_5day_low.toLocaleString()} - ${volume5DayMetrics.volume_5day_high.toLocaleString()} shares`;
+    }
+
+    if (intradayVolumeStats && intradayVolumeStats.volume_candle_count > 0) {
+      volumeAnalysis += `
+
+INTRADAY VOLUME ANALYSIS:
+Current Volume: ${intradayVolumeStats.volume_total_intraday.toLocaleString()} shares (${
+        intradayVolumeStats.volume_candle_count
+      } minutes)
+Average per Minute: ${intradayVolumeStats.volume_avg_intraday.toLocaleString()} shares
+Maximum Minute: ${intradayVolumeStats.volume_max_intraday.toLocaleString()} shares
+Median per Minute: ${intradayVolumeStats.volume_median_intraday.toLocaleString()} shares`;
+    }
+
     const prompt = `Analyze this stock setup for intraday trading and provide a comprehensive trading plan.
 
 MARKET DATA:
@@ -873,13 +910,21 @@ Prev Day Range Breakout: ${indicators.breakout_prev_day_range}
 Opening Range Breakout: ${indicators.opening_range_breakout}
 Clean Setup: ${indicators.clean_setup}
 Intraday Score: ${indicators.intraday_score}/10
+${volumeAnalysis}
 
 INSTRUCTIONS:
-1. Determine if this is a LONG (buy) or SHORT (sell) setup based on technical indicators
-2. Provide signal strength: strong/caution/neutral/risk
+1. Determine if this is a LONG (buy) or SHORT (sell) setup based on technical indicators AND volume analysis
+2. Provide signal strength: strong/caution/neutral/risk (consider volume confirmation)
 3. Calculate entry, target, and stop loss prices using ATR and technical levels
 4. Calculate recommended volume/position size based on risk management
 5. Generate a comprehensive trading plan with bullet points including volume recommendations
+
+VOLUME ANALYSIS GUIDELINES:
+- High volume vs 5D average (>150%) = Strong momentum confirmation
+- Volume trend increasing = Institutional interest building
+- Current volume spike = Immediate attention/breakout potential
+- Low volume (<50% of 5D avg) = Weak setup, avoid or reduce position size
+- Use volume data to confirm or question technical signals
 
 CRITICAL: You MUST respond with ONLY a valid JSON object in this exact format:
 
@@ -1457,7 +1502,11 @@ export async function POST(request: NextRequest) {
       tradingPlan,
       volumeRange;
     try {
-      const aiSignal = await getAdvancedOpenAISignal(indicators);
+      const aiSignal = await getAdvancedOpenAISignal(
+        indicators,
+        volume5DayMetrics,
+        intradayVolumeStats
+      );
       signal = aiSignal.signal;
       opinion = aiSignal.opinion;
       direction = aiSignal.direction;
