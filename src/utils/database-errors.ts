@@ -43,10 +43,12 @@ export function isForeignKeyError(error: PostgrestError): boolean {
   return error.code === "23503";
 }
 
-export default {
+const databaseErrorUtils = {
   DatabaseError,
   handleDatabaseError,
   isNotFoundError,
   isDuplicateError,
   isForeignKeyError,
-};
+} as const;
+
+export default databaseErrorUtils;

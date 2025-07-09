@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, forwardRef } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +39,7 @@ interface StockAutocompleteProps {
   exchange?: string;
 }
 
-export const StockAutocomplete = forwardRef<
+export const StockAutocomplete = React.forwardRef<
   HTMLButtonElement,
   StockAutocompleteProps
 >(function StockAutocomplete(
@@ -76,62 +76,44 @@ export const StockAutocomplete = forwardRef<
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Search for stocks
-  const searchStocks = async (searchQuery: string) => {
-    if (!searchQuery || searchQuery.trim().length < 1) {
+  const searchStocks = useCallback(
+    async (searchQuery: string) => {
+      try {
+        setLoading(true);
+        const params = new URLSearchParams({
+          query: searchQuery,
+          limit: limit.toString(),
+        });
+
+        if (exchange) {
+          params.append("exchange", exchange);
+        }
+
+        const response = await fetch(`/api/upstox/search?${params}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to search stocks");
+        }
+
+        setRecommendations(data.results || []);
+      } catch (error) {
+        console.error("Error searching stocks:", error);
+        setRecommendations([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [limit, exchange]
+  );
+
+  // Debounced search
+  useEffect(() => {
+    if (!query) {
       setRecommendations([]);
       return;
     }
 
-    const searchParams = new URLSearchParams({
-      q: searchQuery.trim(),
-      limit: limit.toString(),
-    });
-
-    if (exchange) {
-      searchParams.append("exchange", exchange);
-    }
-
-    const searchUrl = `/api/upstox/search?${searchParams.toString()}`;
-
-    console.log(`Attempting to fetch: ${searchUrl}`);
-    setLoading(true);
-    try {
-      // Test basic connectivity first
-      console.log("Testing connectivity...");
-      const response = await fetch(searchUrl);
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log(
-          `Search for "${searchQuery}":`,
-          data.results?.length || 0,
-          "results"
-        );
-        console.log("Results:", data.results);
-        setRecommendations(data.results || []);
-      } else {
-        const errorText = await response.text();
-        console.error(
-          `Failed to search stocks: ${response.status} ${response.statusText}`,
-          errorText
-        );
-        setRecommendations([]);
-      }
-    } catch (error) {
-      console.error("Stock search error:", error);
-      console.error("Error details:", {
-        message: error instanceof Error ? error.message : "Unknown error",
-        stack: error instanceof Error ? error.stack : undefined,
-        name: error instanceof Error ? error.name : undefined,
-      });
-      setRecommendations([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Debounced search
-  useEffect(() => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
@@ -145,7 +127,7 @@ export const StockAutocomplete = forwardRef<
         clearTimeout(debounceRef.current);
       }
     };
-  }, [query, limit]);
+  }, [query, limit, searchStocks]);
 
   // Handle input change
   const handleInputChange = (newValue: string) => {

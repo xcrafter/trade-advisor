@@ -130,7 +130,12 @@ export function UserManagement() {
     setError("");
 
     try {
-      const updateData: any = {
+      const updateData: {
+        id: string;
+        email: string;
+        role: "admin" | "user";
+        password?: string;
+      } = {
         id: selectedUser.id,
         email: formData.email,
         role: formData.role,
@@ -157,7 +162,7 @@ export function UserManagement() {
       setIsEditModalOpen(false);
       setSelectedUser(null);
       setFormData({ email: "", password: "", role: "user" });
-    } catch (error) {
+    } catch (error: unknown) {
       setError(
         error instanceof Error ? error.message : "Failed to update user"
       );

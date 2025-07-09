@@ -106,12 +106,6 @@ export default function Home() {
     [selectedSymbol]
   );
 
-  // Focus search input - simplified without ref
-  const handleSearchFocus = useCallback(() => {
-    // The search will be focused when user clicks the search button
-    // No need for ref manipulation
-  }, []);
-
   // Show loading screen while checking authentication
   if (loading) {
     return (
@@ -166,7 +160,7 @@ export default function Home() {
                 />
               </div>
             ) : (
-              <EmptyState onSearchFocus={handleSearchFocus} />
+              <EmptyState />
             )}
           </div>
         </div>

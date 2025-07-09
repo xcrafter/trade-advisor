@@ -15,11 +15,11 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 // GET - Get user by ID
 export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     const { data, error } = await supabaseAdmin.auth.admin.getUserById(id);
 
@@ -51,14 +51,18 @@ export async function GET(
 // PUT - Update user by ID
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const { email, password, role } = body;
 
-    const updates: Record<string, unknown> = {};
+    const updates: {
+      email?: string;
+      password?: string;
+      user_metadata?: { role: string };
+    } = {};
 
     if (email) {
       updates.email = email;
@@ -114,11 +118,11 @@ export async function PUT(
 
 // DELETE - Delete user by ID
 export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
 

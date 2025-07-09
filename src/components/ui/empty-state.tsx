@@ -1,11 +1,6 @@
-import { TrendingUp, Search, BarChart3 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { BarChart3 } from "lucide-react";
 
-interface EmptyStateProps {
-  onSearchFocus?: () => void;
-}
-
-export function EmptyState({ onSearchFocus }: EmptyStateProps) {
+export function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center h-full text-center px-8">
       <div className="relative mb-6">

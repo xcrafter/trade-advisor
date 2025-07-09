@@ -14,11 +14,7 @@ import {
 } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 
-interface LoginFormProps {
-  onToggleMode?: () => void;
-}
-
-export function LoginForm({ onToggleMode }: LoginFormProps) {
+export function LoginForm() {
   const { signIn, loading } = useAuth();
   const { toast } = useToast();
   const [formData, setFormData] = useState({

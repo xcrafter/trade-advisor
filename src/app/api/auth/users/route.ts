@@ -14,7 +14,7 @@ if (!supabaseUrl || !supabaseServiceKey) {
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 // GET - List all users
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const { data, error } = await supabaseAdmin.auth.admin.listUsers();
 
@@ -110,7 +110,11 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const updates: any = {};
+    const updates: {
+      email?: string;
+      password?: string;
+      user_metadata?: { role: string };
+    } = {};
 
     if (email) {
       updates.email = email;

@@ -21,11 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-interface SignUpFormProps {
-  onToggleMode?: () => void;
-}
-
-export function SignUpForm({ onToggleMode }: SignUpFormProps) {
+export function SignUpForm() {
   const { signUp, loading } = useAuth();
   const { toast } = useToast();
   const [formData, setFormData] = useState({
@@ -200,17 +196,7 @@ export function SignUpForm({ onToggleMode }: SignUpFormProps) {
             {loading ? "Creating account..." : "Sign Up"}
           </Button>
 
-          {onToggleMode && (
-            <div className="text-center mt-6">
-              <Button
-                variant="link"
-                onClick={onToggleMode}
-                className="text-blue-600 hover:text-blue-700 font-medium"
-              >
-                Already have an account? Sign in
-              </Button>
-            </div>
-          )}
+          {/* Removed onToggleMode prop, so this block is removed */}
         </form>
       </CardContent>
     </Card>

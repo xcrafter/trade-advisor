@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   XAxis,
   YAxis,
@@ -42,53 +42,54 @@ export function StockChart({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchAnalysis = async (forceRefresh = false) => {
-    try {
+  const fetchAnalysis = useCallback(
+    async (forceRefresh = false) => {
+      if (!instrumentKey) return;
+
       setIsLoading(true);
       setError(null);
-      const url = forceRefresh
-        ? `/api/analyze?instrumentKey=${instrumentKey}&forceRefresh=true`
-        : `/api/analyze?instrumentKey=${instrumentKey}`;
 
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = "Failed to fetch analysis";
-
-        try {
-          const errorData = JSON.parse(errorText);
-          errorMessage = errorData.error || errorMessage;
-        } catch {
-          // If not JSON, use the text as error message
-          errorMessage = errorText || errorMessage;
+      try {
+        const params = new URLSearchParams();
+        if (forceRefresh) {
+          params.append("refresh", "true");
         }
 
-        throw new Error(errorMessage);
-      }
+        const response = await fetch(
+          `/api/analyze?instrument_key=${encodeURIComponent(
+            instrumentKey
+          )}&${params.toString()}`
+        );
 
-      const data = await response.json();
-      setAnalysis(data);
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to fetch analysis");
+        }
 
-      // Update the parent component with the symbol
-      if (onSymbolUpdate && data.symbol) {
-        onSymbolUpdate(data.symbol);
+        const data = await response.json();
+        setAnalysis(data);
+
+        // Update parent component with symbol if needed
+        if (onSymbolUpdate && data.symbol) {
+          onSymbolUpdate(data.symbol);
+        }
+      } catch (error) {
+        console.error("Error fetching analysis:", error);
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error occurred";
+        setError(errorMessage);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      console.error("Error fetching analysis:", error);
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error occurred";
-      setError(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    },
+    [instrumentKey, onSymbolUpdate]
+  );
 
   useEffect(() => {
     if (instrumentKey) {
       fetchAnalysis();
     }
-  }, [instrumentKey]);
+  }, [instrumentKey, fetchAnalysis]);
 
   const handleRefresh = () => {
     fetchAnalysis(true);
