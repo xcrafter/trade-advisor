@@ -25,26 +25,18 @@ import {
   Check,
   ChevronDown,
 } from "lucide-react";
-
-interface StockRecommendation {
-  symbol: string;
-  instrument_key: string;
-  company: string;
-  companyClean: string;
-  exchange: string;
-  matchType: "symbol" | "company" | "partial";
-  relevanceScore: number;
-}
+import { type InstrumentSearchResult } from "@/models/InstrumentModel";
 
 interface StockAutocompleteProps {
   value?: string;
-  onChange?: (symbol: string, stock: StockRecommendation | null) => void;
-  onSelect?: (stock: StockRecommendation) => void;
+  onChange?: (symbol: string, stock: InstrumentSearchResult | null) => void;
+  onSelect?: (stock: InstrumentSearchResult) => void;
   placeholder?: string;
   disabled?: boolean;
   className?: string;
   showCompanyName?: boolean;
   limit?: number;
+  exchange?: string;
 }
 
 export default function StockAutocomplete({
@@ -56,11 +48,12 @@ export default function StockAutocomplete({
   className = "",
   showCompanyName = true,
   limit = 8,
+  exchange,
 }: StockAutocompleteProps) {
   const [query, setQuery] = useState(value);
-  const [recommendations, setRecommendations] = useState<StockRecommendation[]>(
-    []
-  );
+  const [recommendations, setRecommendations] = useState<
+    InstrumentSearchResult[]
+  >([]);
 
   // Debug: Log when recommendations change
   useEffect(() => {
@@ -73,7 +66,7 @@ export default function StockAutocomplete({
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [selectedStock, setSelectedStock] =
-    useState<StockRecommendation | null>(null);
+    useState<InstrumentSearchResult | null>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Search for stocks
@@ -83,9 +76,16 @@ export default function StockAutocomplete({
       return;
     }
 
-    const searchUrl = `/api/upstox/search?q=${encodeURIComponent(
-      searchQuery.trim()
-    )}&limit=${limit}`;
+    const searchParams = new URLSearchParams({
+      q: searchQuery.trim(),
+      limit: limit.toString(),
+    });
+
+    if (exchange) {
+      searchParams.append("exchange", exchange);
+    }
+
+    const searchUrl = `/api/upstox/search?${searchParams.toString()}`;
 
     console.log(`Attempting to fetch: ${searchUrl}`);
     setLoading(true);
@@ -153,7 +153,7 @@ export default function StockAutocomplete({
   };
 
   // Handle stock selection
-  const handleStockSelect = (stock: StockRecommendation) => {
+  const handleStockSelect = (stock: InstrumentSearchResult) => {
     setQuery(stock.symbol);
     setSelectedStock(stock);
     setOpen(false);
@@ -207,7 +207,7 @@ export default function StockAutocomplete({
                     </span>
                     {showCompanyName && (
                       <span className="text-sm text-muted-foreground truncate">
-                        {selectedStock.companyClean}
+                        {selectedStock.company_clean}
                       </span>
                     )}
                   </div>
@@ -292,7 +292,7 @@ export default function StockAutocomplete({
 
                           <div className="flex-1 min-w-0">
                             <div className="text-sm text-muted-foreground truncate">
-                              {stock.companyClean}
+                              {stock.company_clean}
                             </div>
                           </div>
 
