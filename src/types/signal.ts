@@ -85,6 +85,24 @@ export interface SwingTradingIndicators {
   // ===== SWING TRADING SPECIFICS =====
   swing_score: number;
   swing_setup_quality: "excellent" | "good" | "fair" | "poor";
+
+  // ===== SWING TRADING PATTERN DETECTION =====
+  breakout_pattern: "cup_and_handle" | "flag" | "wedge" | "triangle" | "none";
+  breakout_confidence: "high" | "medium" | "low";
+  atr_validation: boolean;
+  atr_percent: number;
+  price_range_valid: boolean;
+  price_range: string;
+  pullback_to_support: boolean;
+  support_distance: number;
+  volume_breakout_detected: boolean;
+  volume_multiple: number;
+  rsi_bounce_zone: boolean;
+  rsi_zone: string;
+  macd_bullish_crossover_detected: boolean;
+  macd_signal_status: string;
+  rising_volume: boolean;
+  volume_trend: string;
 }
 
 export interface AISignal {
@@ -108,6 +126,10 @@ export interface AISignal {
   swingScore: number;
   keyCatalysts: string;
   riskFactors: string;
+  swingSetupQuality: "excellent" | "good" | "fair" | "poor";
+  liquidityCheck: "high" | "moderate" | "low";
+  volatilityCheck: "optimal" | "adequate" | "insufficient";
+  marketTrendAlignment: "strong" | "moderate" | "weak" | "against_trend";
 }
 
 export interface Signal {

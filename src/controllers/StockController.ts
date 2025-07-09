@@ -17,6 +17,8 @@ export interface StockAnalysis {
   // Basic Info
   symbol: string;
   price: number;
+  price_change: number;
+  price_change_percent: number;
   signal: "strong_buy" | "buy" | "hold" | "sell" | "strong_sell" | "neutral";
   direction: "LONG" | "SHORT" | "NEUTRAL";
   confidence_level: "very_high" | "high" | "moderate" | "low";
@@ -42,7 +44,6 @@ export interface StockAnalysis {
   trend_direction: "bullish" | "bearish" | "sideways" | "transitioning";
   trend_strength: "strong" | "moderate" | "weak";
   swing_score: number;
-  swing_setup_quality: "excellent" | "good" | "fair" | "poor";
   volatility_percentile: number;
   volatility_rating: "very_high" | "high" | "moderate" | "low" | "very_low";
 
@@ -132,6 +133,31 @@ export interface StockAnalysis {
   trading_plan: string;
   key_catalysts: string;
   risk_factors: string;
+
+  // Swing Trading Evaluation
+  swing_setup_quality: "excellent" | "good" | "fair" | "poor";
+  liquidity_check: "high" | "moderate" | "low";
+  volatility_check: "optimal" | "adequate" | "insufficient";
+  market_trend_alignment: "strong" | "moderate" | "weak" | "against_trend";
+
+  // Swing Trading Pattern Detection
+  breakout_pattern: "cup_and_handle" | "flag" | "wedge" | "triangle" | "none";
+  breakout_confidence: "high" | "medium" | "low";
+  atr_validation: boolean;
+  atr_percent: number;
+  price_range_valid: boolean;
+  price_range: string;
+  pullback_to_support: boolean;
+  support_distance: number;
+  volume_breakout_detected: boolean;
+  volume_multiple: number;
+  rsi_bounce_zone: boolean;
+  rsi_zone: string;
+  macd_bullish_crossover_detected: boolean;
+  macd_signal_status: string;
+  rising_volume: boolean;
+  volume_trend: string;
+
   last_updated_at: string;
 }
 
@@ -183,6 +209,13 @@ export class StockController {
 
           // Use cached data if less than 4 hours old
           if (hoursSinceUpdate < 4) {
+            // Add fallback values for new fields if they don't exist in cached data
+            if (cachedAnalysis.price_change === undefined) {
+              cachedAnalysis.price_change = 0;
+            }
+            if (cachedAnalysis.price_change_percent === undefined) {
+              cachedAnalysis.price_change_percent = 0;
+            }
             return cachedAnalysis;
           }
         }
@@ -249,7 +282,36 @@ export class StockController {
       );
     }
 
-    const currentPrice = candles[candles.length - 1].close;
+    // Get real-time current price and change information
+    let currentPrice: number;
+    let priceChange: number;
+    let priceChangePercent: number;
+
+    try {
+      console.log(
+        `[StockController] Fetching real-time quote for ${instrument.symbol}`
+      );
+      const quote = await this.upstoxApi.getMarketQuote(instrumentKey);
+      currentPrice = quote.ltp;
+      priceChange = quote.change;
+      priceChangePercent = quote.changePercent;
+      console.log(
+        `[StockController] Real-time quote for ${
+          instrument.symbol
+        }: ₹${currentPrice} (${priceChangePercent.toFixed(2)}%)`
+      );
+    } catch (error) {
+      console.warn(
+        `[StockController] Failed to fetch real-time quote, using last candle close price:`,
+        error
+      );
+      currentPrice = candles[candles.length - 1].close;
+      const previousClose =
+        candles.length > 1 ? candles[candles.length - 2].close : currentPrice;
+      priceChange = currentPrice - previousClose;
+      priceChangePercent =
+        ((currentPrice - previousClose) / previousClose) * 100;
+    }
 
     // Calculate technical indicators
     const indicators = await this.technicalAnalysis.calculateSwingIndicators(
@@ -281,6 +343,8 @@ export class StockController {
       ...aiSignal,
       symbol: instrument.symbol,
       price: currentPrice,
+      price_change: priceChange,
+      price_change_percent: priceChangePercent,
       candles,
       price_ranges: priceRanges,
       support_levels: support,
@@ -302,6 +366,13 @@ export class StockController {
       trading_plan: aiSignal.tradingPlan,
       key_catalysts: aiSignal.keyCatalysts,
       risk_factors: aiSignal.riskFactors,
+
+      // Swing Trading Evaluation
+      swing_setup_quality: aiSignal.swingSetupQuality,
+      liquidity_check: aiSignal.liquidityCheck,
+      volatility_check: aiSignal.volatilityCheck,
+      market_trend_alignment: aiSignal.marketTrendAlignment,
+
       last_updated_at: new Date().toISOString(),
     };
 

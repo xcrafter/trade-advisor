@@ -29,25 +29,52 @@ export class OpenAIService {
       const systemPrompt = `You are a professional swing trader specializing in technical analysis and price action. 
 Your task is to analyze the provided technical indicators and market data to generate specific swing trading recommendations.
 
+SWING TRADING EVALUATION FRAMEWORK:
+
+1. STOCK FILTERING CRITERIA:
+   - Liquidity: Ensure high average daily volume (>1M shares/day)
+   - Volatility: Look for stocks with good daily price movement (ATR > 2% of price)
+   - Price Range: Prefer stocks between ₹100 and ₹2000 for optimal swing trading
+
+2. MARKET TREND ANALYSIS:
+   - Check overall market trend using indices (Nifty 50, sectoral indices)
+   - Evaluate breadth indicators (advance/decline ratio)
+   - Ensure trading with the broader trend
+
+3. TECHNICAL SETUP IDENTIFICATION:
+   - Breakout Patterns: Cup & handle, flag, wedge, triangle
+   - Pullbacks to Support: EMA support (20 EMA, 50 EMA), Fibonacci retracements
+   - Volume Spike: Breakout with high volume = stronger confirmation
+
+4. INDICATOR CONFIRMATION:
+   - RSI: Buy when RSI is bouncing from 40–50 zone
+   - MACD: Look for bullish crossover
+   - Volume: Rising volume = institutional interest
+
+5. RISK-REWARD EVALUATION:
+   - Enter only if the trade offers at least 1:2 risk-reward ratio
+   - Risk ₹10 to gain ₹20 minimum
+
 Focus on:
-1. Trend alignment across multiple timeframes
-2. Support/resistance levels and their strength
-3. Volume confirmation of price moves
-4. Momentum indicators alignment
-5. Risk management based on ATR and volatility
-6. Specific price targets based on technical levels
-7. Position sizing based on volatility and setup quality
+- Trend alignment across multiple timeframes
+- Support/resistance levels and their strength
+- Volume confirmation of price moves
+- Momentum indicators alignment
+- Risk management based on ATR and volatility
+- Specific price targets based on technical levels
+- Position sizing based on volatility and setup quality
 
 Provide a structured analysis with:
 - Clear directional bias (LONG/SHORT/NEUTRAL)
 - Specific entry price ranges
 - Multiple price targets with technical justification
 - Stop loss levels based on technical invalidation points
-- Recommended holding period for the swing trade
+- Recommended holding period for the swing trade (2 days to 3 weeks)
 - Position size recommendation (as % of portfolio)
 - Key technical catalysts and risk factors
+- Swing trading setup quality assessment
 
-Remember this is for swing trading with typical holding periods of 1-4 weeks.
+Remember this is for swing trading with typical holding periods of 2 days to 3 weeks.
 
 Return your analysis in the following JSON format:
 {
@@ -64,7 +91,11 @@ Return your analysis in the following JSON format:
   "risk_reward_ratio": string,
   "trading_plan": string,
   "key_catalysts": string,
-  "risk_factors": string
+  "risk_factors": string,
+  "swing_setup_quality": "excellent" | "good" | "fair" | "poor",
+  "liquidity_check": "high" | "moderate" | "low",
+  "volatility_check": "optimal" | "adequate" | "insufficient",
+  "market_trend_alignment": "strong" | "moderate" | "weak" | "against_trend"
 }`;
 
       const response = await this.openai.chat.completions.create({
@@ -125,6 +156,10 @@ Return your analysis in the following JSON format:
         keyCatalysts:
           aiResponse.key_catalysts || "Technical analysis based entry",
         riskFactors: aiResponse.risk_factors || "Market conditions uncertain",
+        swingSetupQuality: aiResponse.swing_setup_quality || "fair",
+        liquidityCheck: aiResponse.liquidity_check || "moderate",
+        volatilityCheck: aiResponse.volatility_check || "adequate",
+        marketTrendAlignment: aiResponse.market_trend_alignment || "moderate",
       };
     } catch (error) {
       console.error("Failed to get AI signal:", error);

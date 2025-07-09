@@ -230,15 +230,48 @@ export function StockChart({
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">{analysis.symbol}</h1>
-            <p className="text-gray-600">
-              Current Price: ₹{analysis.price.toFixed(2)}
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-gray-600 text-lg">
+                Current Price: ₹{analysis.price.toFixed(2)}
+              </p>
+              {analysis.price_change !== undefined &&
+                analysis.price_change_percent !== undefined && (
+                  <div className="flex items-center gap-1">
+                    <span
+                      className={`text-sm font-medium ${
+                        analysis.price_change_percent >= 0
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }`}
+                    >
+                      {analysis.price_change_percent >= 0 ? "+" : ""}₹
+                      {analysis.price_change.toFixed(2)}
+                    </span>
+                    <span
+                      className={`text-sm font-medium ${
+                        analysis.price_change_percent >= 0
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }`}
+                    >
+                      ({analysis.price_change_percent >= 0 ? "+" : ""}
+                      {analysis.price_change_percent.toFixed(2)}%)
+                    </span>
+                  </div>
+                )}
+            </div>
             <div className="mt-2 flex items-center gap-2">
               <Badge
                 variant="outline"
                 className="text-xs bg-green-50 text-green-700 border-green-200"
               >
                 ✓ Real Market Data
+              </Badge>
+              <Badge
+                variant="outline"
+                className="text-xs bg-blue-50 text-blue-700 border-blue-200"
+              >
+                📊 Real-time Price
               </Badge>
               <span className="text-xs text-gray-500">
                 Last Updated:{" "}
@@ -338,6 +371,282 @@ export function StockChart({
                 <span className="text-blue-600">
                   {analysis.position_size_percent}%
                 </span>
+              </div>
+            </div>
+
+            {/* Swing Trading Evaluation */}
+            <div className="pt-2 border-t">
+              <h4 className="font-medium mb-2 text-sm">
+                Swing Trading Evaluation
+              </h4>
+              <div className="space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-sm">Setup Quality:</span>
+                  <Badge variant="outline" className="text-xs">
+                    {analysis.swing_setup_quality || "fair"}
+                  </Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm">Liquidity:</span>
+                  <Badge variant="outline" className="text-xs">
+                    {analysis.liquidity_check || "moderate"}
+                  </Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm">Volatility:</span>
+                  <Badge variant="outline" className="text-xs">
+                    {analysis.volatility_check || "adequate"}
+                  </Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm">Trend Alignment:</span>
+                  <Badge variant="outline" className="text-xs">
+                    {analysis.market_trend_alignment || "moderate"}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            {/* Swing Trading Signals */}
+            <div className="pt-2 border-t">
+              <h4 className="font-medium mb-2 text-sm">
+                Swing Trading Signals
+              </h4>
+              <div className="grid grid-cols-1 gap-2 text-sm">
+                {/* Breakout Pattern */}
+                <div className="flex items-center justify-between">
+                  <span>Breakout Pattern:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-600">
+                      {analysis.breakout_pattern === "none"
+                        ? "None"
+                        : analysis.breakout_pattern === "cup_and_handle"
+                        ? "Cup & Handle"
+                        : analysis.breakout_pattern === "flag"
+                        ? "Flag"
+                        : analysis.breakout_pattern === "wedge"
+                        ? "Wedge"
+                        : analysis.breakout_pattern === "triangle"
+                        ? "Triangle"
+                        : "None"}
+                    </span>
+                    <span
+                      className={
+                        analysis.breakout_pattern !== "none"
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }
+                    >
+                      {analysis.breakout_pattern !== "none" ? "✓" : "✗"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* ATR > 2% */}
+                <div className="flex items-center justify-between">
+                  <span>ATR &gt; 2%:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-600">
+                      {analysis.atr_percent?.toFixed(2) || "0.00"}%
+                    </span>
+                    <span
+                      className={
+                        analysis.atr_validation
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }
+                    >
+                      {analysis.atr_validation ? "✓" : "✗"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Price Range 100-2000 */}
+                <div className="flex items-center justify-between">
+                  <span>Price Range ₹100-₹2000:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-600">
+                      {analysis.price_range || "N/A"}
+                    </span>
+                    <span
+                      className={
+                        analysis.price_range_valid
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }
+                    >
+                      {analysis.price_range_valid ? "✓" : "✗"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Pullback to Support */}
+                <div className="flex items-center justify-between">
+                  <span>Pullback to Support:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-600">
+                      {analysis.support_distance?.toFixed(1) || "0.0"}% away
+                    </span>
+                    <span
+                      className={
+                        analysis.pullback_to_support
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }
+                    >
+                      {analysis.pullback_to_support ? "✓" : "✗"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Volume Breakout */}
+                <div className="flex items-center justify-between">
+                  <span>Volume Breakout:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-600">
+                      {analysis.volume_multiple?.toFixed(1) || "0.0"}x avg
+                    </span>
+                    <span
+                      className={
+                        analysis.volume_breakout_detected
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }
+                    >
+                      {analysis.volume_breakout_detected ? "✓" : "✗"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* RSI Bounce Zone 40-50 */}
+                <div className="flex items-center justify-between">
+                  <span>RSI Bounce Zone (40-50):</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-600">
+                      {analysis.rsi_zone || "N/A"}
+                    </span>
+                    <span
+                      className={
+                        analysis.rsi_bounce_zone
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }
+                    >
+                      {analysis.rsi_bounce_zone ? "✓" : "✗"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* MACD Bullish Crossover */}
+                <div className="flex items-center justify-between">
+                  <span>MACD Bullish Crossover:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-600">
+                      {analysis.macd_signal_status || "neutral"}
+                    </span>
+                    <span
+                      className={
+                        analysis.macd_bullish_crossover_detected
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }
+                    >
+                      {analysis.macd_bullish_crossover_detected ? "✓" : "✗"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Rising Volume */}
+                <div className="flex items-center justify-between">
+                  <span>Rising Volume:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-600">
+                      {analysis.volume_trend || "N/A"}
+                    </span>
+                    <span
+                      className={
+                        analysis.rising_volume
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }
+                    >
+                      {analysis.rising_volume ? "✓" : "✗"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Overall Score */}
+                <div className="flex items-center justify-between pt-2 border-t font-medium">
+                  <span>Overall Score:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">
+                      {
+                        [
+                          analysis.breakout_pattern !== "none",
+                          analysis.atr_validation,
+                          analysis.price_range_valid,
+                          analysis.pullback_to_support,
+                          analysis.volume_breakout_detected,
+                          analysis.rsi_bounce_zone,
+                          analysis.macd_bullish_crossover_detected,
+                          analysis.rising_volume,
+                        ].filter(Boolean).length
+                      }
+                      /8
+                    </span>
+                    <span
+                      className={
+                        [
+                          analysis.breakout_pattern !== "none",
+                          analysis.atr_validation,
+                          analysis.price_range_valid,
+                          analysis.pullback_to_support,
+                          analysis.volume_breakout_detected,
+                          analysis.rsi_bounce_zone,
+                          analysis.macd_bullish_crossover_detected,
+                          analysis.rising_volume,
+                        ].filter(Boolean).length >= 6
+                          ? "text-green-600"
+                          : [
+                              analysis.breakout_pattern !== "none",
+                              analysis.atr_validation,
+                              analysis.price_range_valid,
+                              analysis.pullback_to_support,
+                              analysis.volume_breakout_detected,
+                              analysis.rsi_bounce_zone,
+                              analysis.macd_bullish_crossover_detected,
+                              analysis.rising_volume,
+                            ].filter(Boolean).length >= 4
+                          ? "text-yellow-600"
+                          : "text-red-600"
+                      }
+                    >
+                      {[
+                        analysis.breakout_pattern !== "none",
+                        analysis.atr_validation,
+                        analysis.price_range_valid,
+                        analysis.pullback_to_support,
+                        analysis.volume_breakout_detected,
+                        analysis.rsi_bounce_zone,
+                        analysis.macd_bullish_crossover_detected,
+                        analysis.rising_volume,
+                      ].filter(Boolean).length >= 6
+                        ? "✓ Strong"
+                        : [
+                            analysis.breakout_pattern !== "none",
+                            analysis.atr_validation,
+                            analysis.price_range_valid,
+                            analysis.pullback_to_support,
+                            analysis.volume_breakout_detected,
+                            analysis.rsi_bounce_zone,
+                            analysis.macd_bullish_crossover_detected,
+                            analysis.rising_volume,
+                          ].filter(Boolean).length >= 4
+                        ? "⚠ Moderate"
+                        : "✗ Weak"}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </CardContent>

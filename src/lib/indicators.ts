@@ -807,6 +807,372 @@ export function calculatePriceRanges(candles: CandleData[]): {
   };
 }
 
+// ===== SWING TRADING PATTERN DETECTION =====
+
+export function detectBreakoutPattern(candles: CandleData[]): {
+  pattern: "cup_and_handle" | "flag" | "wedge" | "triangle" | "none";
+  confidence: "high" | "medium" | "low";
+} {
+  if (candles.length < 30) return { pattern: "none", confidence: "low" };
+
+  const recent = candles.slice(-30);
+  const prices = recent.map((c) => c.close);
+  const highs = recent.map((c) => c.high);
+  const lows = recent.map((c) => c.low);
+  const volumes = recent.map((c) => c.volume);
+  const currentPrice = prices[prices.length - 1];
+
+  // Flag pattern: Strong move followed by consolidation
+  const flagLookback = 15;
+  if (prices.length >= flagLookback) {
+    const preTrend = prices.slice(0, flagLookback);
+    const consolidation = prices.slice(flagLookback);
+
+    const trendMove =
+      (preTrend[preTrend.length - 1] - preTrend[0]) / preTrend[0];
+    const consolidationRange =
+      Math.max(...consolidation) - Math.min(...consolidation);
+    const consolidationPercent = consolidationRange / currentPrice;
+
+    // Strong move (>8%) followed by tight consolidation (<4%)
+    if (Math.abs(trendMove) > 0.08 && consolidationPercent < 0.04) {
+      // Check volume confirmation - lower volume during consolidation
+      const trendVolume =
+        preTrend
+          .slice(-5)
+          .reduce((sum, _, i) => sum + volumes[flagLookback - 5 + i], 0) / 5;
+      const consolidationVolume =
+        consolidation
+          .slice(-5)
+          .reduce(
+            (sum, _, i) =>
+              sum + volumes[flagLookback + consolidation.length - 5 + i],
+            0
+          ) / 5;
+
+      if (consolidationVolume < trendVolume * 0.8) {
+        return { pattern: "flag", confidence: "high" };
+      }
+    }
+  }
+
+  // Triangle pattern: Converging support and resistance
+  if (prices.length >= 20) {
+    const trianglePrices = prices.slice(-20);
+    const triangleHighs = highs.slice(-20);
+    const triangleLows = lows.slice(-20);
+
+    // Find trend lines
+    const firstHalf = trianglePrices.slice(0, 10);
+    const secondHalf = trianglePrices.slice(10);
+
+    const firstRange = Math.max(...firstHalf) - Math.min(...firstHalf);
+    const secondRange = Math.max(...secondHalf) - Math.min(...secondHalf);
+
+    // Converging pattern - range should be decreasing
+    if (firstRange > secondRange * 1.3) {
+      // Check for at least 2 touches on each side
+      const recentHigh = Math.max(...triangleHighs);
+      const recentLow = Math.min(...triangleLows);
+
+      let upperTouches = 0;
+      let lowerTouches = 0;
+
+      for (let i = 0; i < triangleHighs.length; i++) {
+        if (triangleHighs[i] > recentHigh * 0.99) upperTouches++;
+        if (triangleLows[i] < recentLow * 1.01) lowerTouches++;
+      }
+
+      if (upperTouches >= 2 && lowerTouches >= 2) {
+        return { pattern: "triangle", confidence: "medium" };
+      }
+    }
+  }
+
+  // Cup and Handle: U-shaped recovery with handle
+  if (prices.length >= 25) {
+    const cupPrices = prices.slice(-25);
+    const cupVolumes = volumes.slice(-25);
+
+    // Find the cup (U-shape)
+    const leftSide = cupPrices.slice(0, 8);
+    const bottom = cupPrices.slice(8, 17);
+    const rightSide = cupPrices.slice(17, 22);
+    const handle = cupPrices.slice(22);
+
+    const leftHigh = Math.max(...leftSide);
+    const rightHigh = Math.max(...rightSide);
+    const cupLow = Math.min(...bottom);
+    const handleHigh = Math.max(...handle);
+
+    // Cup criteria: similar highs on both sides, significant dip
+    const cupDepth = (leftHigh - cupLow) / leftHigh;
+    const sidesSimilar = Math.abs(leftHigh - rightHigh) / leftHigh < 0.05;
+    const handleLower = handleHigh < rightHigh * 0.95;
+
+    if (cupDepth > 0.12 && cupDepth < 0.35 && sidesSimilar && handleLower) {
+      // Volume should decrease during cup formation and handle
+      const leftVolume =
+        leftSide.slice(-3).reduce((sum, _, i) => sum + cupVolumes[5 + i], 0) /
+        3;
+      const bottomVolume =
+        bottom.slice(-3).reduce((sum, _, i) => sum + cupVolumes[14 + i], 0) / 3;
+
+      if (bottomVolume < leftVolume * 0.7) {
+        return { pattern: "cup_and_handle", confidence: "medium" };
+      }
+    }
+  }
+
+  // Wedge pattern: Converging trend lines with directional bias
+  if (prices.length >= 15) {
+    const wedgePrices = prices.slice(-15);
+    const wedgeHighs = highs.slice(-15);
+    const wedgeLows = lows.slice(-15);
+
+    // Rising wedge (bearish) or falling wedge (bullish)
+    const firstPrice = wedgePrices[0];
+    const lastPrice = wedgePrices[wedgePrices.length - 1];
+    const priceDirection = (lastPrice - firstPrice) / firstPrice;
+
+    const firstHigh = Math.max(...wedgeHighs.slice(0, 5));
+    const lastHigh = Math.max(...wedgeHighs.slice(-5));
+    const firstLow = Math.min(...wedgeLows.slice(0, 5));
+    const lastLow = Math.min(...wedgeLows.slice(-5));
+
+    const highTrend = (lastHigh - firstHigh) / firstHigh;
+    const lowTrend = (lastLow - firstLow) / firstLow;
+
+    // Converging lines with directional bias
+    if (
+      Math.abs(highTrend - lowTrend) > 0.03 &&
+      Math.abs(priceDirection) > 0.02
+    ) {
+      return { pattern: "wedge", confidence: "low" };
+    }
+  }
+
+  return { pattern: "none", confidence: "low" };
+}
+
+export function checkATRValidation(
+  candles: CandleData[],
+  currentPrice: number
+): {
+  isValid: boolean;
+  atrPercent: number;
+} {
+  const atr = calculateATR(candles, 14).atr;
+  const atrPercent = (atr / currentPrice) * 100;
+
+  return {
+    isValid: atrPercent > 2.0,
+    atrPercent: Number(atrPercent.toFixed(2)),
+  };
+}
+
+export function checkPriceRange(price: number): {
+  isValid: boolean;
+  range: string;
+} {
+  const isValid = price >= 100 && price <= 2000;
+  let range = "";
+
+  if (price < 100) range = "below ₹100";
+  else if (price > 2000) range = "above ₹2000";
+  else range = "₹100-₹2000";
+
+  return { isValid, range };
+}
+
+export function detectPullbackToSupport(
+  candles: CandleData[],
+  supportLevels: number[],
+  currentPrice: number
+): {
+  isPullback: boolean;
+  supportLevel: number | null;
+  distance: number;
+} {
+  if (supportLevels.length === 0) {
+    return { isPullback: false, supportLevel: null, distance: 0 };
+  }
+
+  // Find the nearest support level below current price
+  const supportsBelowPrice = supportLevels.filter(
+    (level) => level < currentPrice
+  );
+  if (supportsBelowPrice.length === 0) {
+    return { isPullback: false, supportLevel: null, distance: 0 };
+  }
+
+  // Get the closest support level
+  const nearestSupport = Math.max(...supportsBelowPrice);
+  const distance = ((currentPrice - nearestSupport) / currentPrice) * 100;
+
+  // Check if we're in a pullback scenario:
+  // 1. Price is within 5% of support level
+  // 2. Recent price action shows a pullback (price was higher in last 5 days)
+  const isPullback = distance <= 5;
+
+  if (isPullback && candles.length >= 5) {
+    // Verify it's actually a pullback by checking recent highs
+    const recent5Days = candles.slice(-5);
+    const recentHigh = Math.max(...recent5Days.map((c) => c.high));
+    const pullbackConfirmed = recentHigh > currentPrice * 1.02; // Recent high at least 2% above current
+
+    return {
+      isPullback: pullbackConfirmed,
+      supportLevel: nearestSupport,
+      distance: Number(distance.toFixed(2)),
+    };
+  }
+
+  return {
+    isPullback: false,
+    supportLevel: nearestSupport,
+    distance: Number(distance.toFixed(2)),
+  };
+}
+
+export function detectVolumeBreakout(candles: CandleData[]): {
+  hasVolumeBreakout: boolean;
+  volumeMultiple: number;
+} {
+  if (candles.length < 21)
+    return { hasVolumeBreakout: false, volumeMultiple: 0 };
+
+  const currentVolume = candles[candles.length - 1].volume;
+  const recentVolume = candles[candles.length - 2]?.volume || currentVolume;
+
+  // Calculate 20-day average volume (excluding current day)
+  const avgVolume =
+    candles.slice(-21, -1).reduce((sum, c) => sum + c.volume, 0) / 20;
+
+  // Use the higher of current or recent volume for breakout detection
+  const volumeToCheck = Math.max(currentVolume, recentVolume);
+  const volumeMultiple = volumeToCheck / avgVolume;
+
+  // Also check if volume is increasing trend (3 of last 5 days above average)
+  const recent5Volumes = candles.slice(-5).map((c) => c.volume);
+  const aboveAvgCount = recent5Volumes.filter((vol) => vol > avgVolume).length;
+  const volumeTrend = aboveAvgCount >= 3;
+
+  return {
+    hasVolumeBreakout: volumeMultiple > 1.5 || volumeTrend,
+    volumeMultiple: Number(volumeMultiple.toFixed(2)),
+  };
+}
+
+export function checkRSIBounceZone(rsi: number): {
+  isInBounceZone: boolean;
+  zone: string;
+} {
+  // Expanded bounce zone for swing trading - RSI between 35-55 is good for entries
+  const isInBounceZone = rsi >= 35 && rsi <= 55;
+  let zone = "";
+
+  if (rsi < 25) zone = "deeply oversold";
+  else if (rsi >= 25 && rsi < 35) zone = "oversold";
+  else if (rsi >= 35 && rsi <= 45) zone = "ideal bounce zone";
+  else if (rsi > 45 && rsi <= 55) zone = "good bounce zone";
+  else if (rsi > 55 && rsi < 70) zone = "bullish momentum";
+  else if (rsi >= 70 && rsi < 80) zone = "overbought";
+  else zone = "extremely overbought";
+
+  return { isInBounceZone, zone };
+}
+
+export function detectMACDBullishCrossover(candles: CandleData[]): {
+  isBullishCrossover: boolean;
+  signal: string;
+} {
+  if (candles.length < 35) {
+    return { isBullishCrossover: false, signal: "insufficient data" };
+  }
+
+  const prices = candles.map((c) => c.close);
+
+  // Calculate MACD for last few periods to detect crossover
+  const currentMACD = calculateMACD(prices);
+  const previousMACD = calculateMACD(prices.slice(0, -1));
+
+  // Detect actual crossover - line crossing above signal
+  const currentAbove = currentMACD.line > currentMACD.signal;
+  const previousBelow = previousMACD.line <= previousMACD.signal;
+  const isBullishCrossover = currentAbove && previousBelow;
+
+  // Detect bearish crossover - line crossing below signal
+  const currentBelow = currentMACD.line < currentMACD.signal;
+  const previousAbove = previousMACD.line >= previousMACD.signal;
+  const isBearishCrossover = currentBelow && previousAbove;
+
+  let signal = "";
+  if (isBullishCrossover) {
+    signal = "bullish crossover";
+  } else if (isBearishCrossover) {
+    signal = "bearish crossover";
+  } else if (currentMACD.line > currentMACD.signal) {
+    signal = "bullish (no crossover)";
+  } else if (currentMACD.line < currentMACD.signal) {
+    signal = "bearish (no crossover)";
+  } else {
+    signal = "neutral";
+  }
+
+  return { isBullishCrossover, signal };
+}
+
+export function detectRisingVolume(candles: CandleData[]): {
+  isRising: boolean;
+  trend: string;
+} {
+  if (candles.length < 10)
+    return { isRising: false, trend: "insufficient data" };
+
+  const recent10 = candles.slice(-10);
+  const volumes = recent10.map((c) => c.volume);
+
+  // Method 1: Check if recent 5 days average > previous 5 days average
+  const recent5Avg = volumes.slice(-5).reduce((sum, vol) => sum + vol, 0) / 5;
+  const previous5Avg =
+    volumes.slice(-10, -5).reduce((sum, vol) => sum + vol, 0) / 5;
+  const avgIncreasing = recent5Avg > previous5Avg * 1.1; // 10% increase
+
+  // Method 2: Check for consecutive increases in recent days
+  const recent5 = volumes.slice(-5);
+  let consecutiveIncreases = 0;
+  for (let i = 1; i < recent5.length; i++) {
+    if (recent5[i] > recent5[i - 1]) consecutiveIncreases++;
+  }
+  const consecutiveRising = consecutiveIncreases >= 3;
+
+  // Method 3: Check if current volume is above 20-day average
+  const currentVolume = volumes[volumes.length - 1];
+  const avgVolume =
+    candles.length >= 20
+      ? candles.slice(-20).reduce((sum, c) => sum + c.volume, 0) / 20
+      : volumes.reduce((sum, vol) => sum + vol, 0) / volumes.length;
+  const aboveAverage = currentVolume > avgVolume * 1.2; // 20% above average
+
+  const isRising = avgIncreasing || consecutiveRising || aboveAverage;
+
+  let trend = "";
+  if (avgIncreasing && consecutiveRising) {
+    trend = "strongly rising";
+  } else if (avgIncreasing || consecutiveRising) {
+    trend = "rising";
+  } else if (aboveAverage) {
+    trend = "elevated";
+  } else if (recent5Avg < previous5Avg * 0.9) {
+    trend = "declining";
+  } else {
+    trend = "stable";
+  }
+
+  return { isRising, trend };
+}
+
 // Technical Analysis class that uses the indicator functions
 export class TechnicalAnalysis {
   private openAIService: OpenAIService;
@@ -953,6 +1319,20 @@ export class TechnicalAnalysis {
         ? "fair"
         : "poor";
 
+    // Swing Trading Pattern Detection
+    const breakoutPattern = detectBreakoutPattern(candles);
+    const atrValidation = checkATRValidation(candles, currentPrice);
+    const priceRangeCheck = checkPriceRange(currentPrice);
+    const pullbackCheck = detectPullbackToSupport(
+      candles,
+      support,
+      currentPrice
+    );
+    const volumeBreakout = detectVolumeBreakout(candles);
+    const rsiBounceCheck = checkRSIBounceZone(rsi);
+    const macdCrossover = detectMACDBullishCrossover(candles);
+    const risingVolumeCheck = detectRisingVolume(candles);
+
     return {
       symbol: "", // Will be filled by controller
       timestamp: new Date().toISOString(),
@@ -1032,6 +1412,24 @@ export class TechnicalAnalysis {
       // Swing Trading
       swing_score: swingScore,
       swing_setup_quality: setupQuality,
+
+      // Swing Trading Pattern Detection
+      breakout_pattern: breakoutPattern.pattern,
+      breakout_confidence: breakoutPattern.confidence,
+      atr_validation: atrValidation.isValid,
+      atr_percent: atrValidation.atrPercent,
+      price_range_valid: priceRangeCheck.isValid,
+      price_range: priceRangeCheck.range,
+      pullback_to_support: pullbackCheck.isPullback,
+      support_distance: pullbackCheck.distance,
+      volume_breakout_detected: volumeBreakout.hasVolumeBreakout,
+      volume_multiple: volumeBreakout.volumeMultiple,
+      rsi_bounce_zone: rsiBounceCheck.isInBounceZone,
+      rsi_zone: rsiBounceCheck.zone,
+      macd_bullish_crossover_detected: macdCrossover.isBullishCrossover,
+      macd_signal_status: macdCrossover.signal,
+      rising_volume: risingVolumeCheck.isRising,
+      volume_trend: risingVolumeCheck.trend,
     };
   }
 }

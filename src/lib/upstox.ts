@@ -2,6 +2,7 @@ import {
   type UpstoxConfig,
   type CandleData,
   type RawCandleData,
+  type Quote,
 } from "@/types/upstox";
 
 const UPSTOX_API_URL = "https://api.upstox.com/v3";
@@ -40,11 +41,18 @@ interface CacheEntry {
   timestamp: number;
 }
 
+interface QuoteCacheEntry {
+  data: Quote;
+  timestamp: number;
+}
+
 export class UpstoxAPI {
   private apiKey: string;
   private pendingRequests: Map<string, Promise<unknown>> = new Map();
   private cache: Map<string, CacheEntry> = new Map();
+  private quoteCache: Map<string, QuoteCacheEntry> = new Map();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  private readonly QUOTE_CACHE_DURATION = 30 * 1000; // 30 seconds for quotes
 
   constructor(config: UpstoxConfig) {
     this.apiKey = config.apiKey;
@@ -118,6 +126,88 @@ export class UpstoxAPI {
       close: candle[4],
       volume: candle[5],
     };
+  }
+
+  /**
+   * Get real-time market quote for an instrument
+   */
+  async getMarketQuote(instrumentKey: string): Promise<Quote> {
+    try {
+      const cacheKey = `quote:${instrumentKey}`;
+
+      // Check cache first
+      const cached = this.quoteCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < this.QUOTE_CACHE_DURATION) {
+        console.log(`[UpstoxAPI] Quote cache hit for ${instrumentKey}`);
+        return cached.data;
+      }
+
+      // Use the correct LTP Quotes V3 endpoint
+      const endpoint = `/market-quote/ltp?instrument_key=${instrumentKey}`;
+      console.log(`[UpstoxAPI] Calling LTP V3: ${endpoint}`);
+
+      const response = await this.request<{
+        status: string;
+        data: Record<
+          string,
+          {
+            last_price: number;
+            instrument_token: string;
+            ltq: number;
+            volume: number;
+            cp: number;
+          }
+        >;
+      }>(endpoint);
+
+      // Get the first key from the response data (since there should only be one instrument)
+      const firstKey = Object.keys(response.data)[0];
+      const quoteData = response.data[firstKey];
+
+      if (!quoteData) {
+        throw new Error(`No quote data found for ${instrumentKey}`);
+      }
+
+      const quote: Quote = {
+        ltp: quoteData.last_price,
+        open: quoteData.cp, // Using previous close as open (will be updated with proper OHLC if needed)
+        high: quoteData.last_price, // LTP endpoint doesn't provide high/low, using LTP
+        low: quoteData.last_price, // LTP endpoint doesn't provide high/low, using LTP
+        close: quoteData.cp, // Previous day's closing price
+        volume: quoteData.volume,
+        change: quoteData.last_price - quoteData.cp,
+        changePercent:
+          ((quoteData.last_price - quoteData.cp) / quoteData.cp) * 100,
+      };
+
+      console.log(quote);
+
+      // Cache the result
+      this.quoteCache.set(cacheKey, {
+        data: quote,
+        timestamp: Date.now(),
+      });
+
+      console.log(
+        `[UpstoxAPI] LTP V3 quote for ${instrumentKey}: LTP=₹${
+          quote.ltp
+        }, Volume=${quoteData.volume}, Change=${quote.changePercent.toFixed(
+          2
+        )}%`
+      );
+      return quote;
+    } catch (error) {
+      console.error("Failed to fetch LTP quote:", error);
+      throw new Error("Failed to fetch LTP quote");
+    }
+  }
+
+  /**
+   * Get current price for an instrument (convenience method)
+   */
+  async getCurrentPrice(instrumentKey: string): Promise<number> {
+    const quote = await this.getMarketQuote(instrumentKey);
+    return quote.ltp;
   }
 
   /**
