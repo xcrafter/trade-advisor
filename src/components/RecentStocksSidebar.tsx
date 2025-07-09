@@ -1,8 +1,17 @@
-import { useState, useEffect } from "react";
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { Search, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import { RefreshCw, Search, TrendingUp } from "lucide-react";
-import { StockAnalysis } from "@/controllers/StockController";
+import { Badge } from "@/components/ui/badge";
+
+interface StockData {
+  symbol: string;
+  price: number;
+  signal: string;
+  swing_score: number;
+  last_updated_at: string;
+}
 
 interface RecentStocksSidebarProps {
   onStockSelect: (symbol: string) => void;
@@ -11,146 +20,142 @@ interface RecentStocksSidebarProps {
 export function RecentStocksSidebar({
   onStockSelect,
 }: RecentStocksSidebarProps) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [recentStocks, setRecentStocks] = useState<StockAnalysis[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [recentStocks, setRecentStocks] = useState<StockData[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  // Load recent stocks on mount
   useEffect(() => {
-    loadRecentStocks();
+    fetchRecentStocks();
   }, []);
 
-  // Load recent stocks from API
-  const loadRecentStocks = async () => {
+  const fetchRecentStocks = async () => {
     try {
-      setIsLoading(true);
       const response = await fetch("/api/analyze/recent");
       if (response.ok) {
         const data = await response.json();
-        setRecentStocks(data);
+        setRecentStocks(data || []);
       }
     } catch (error) {
-      console.error("Failed to load recent stocks:", error);
+      console.error("Error fetching recent stocks:", error);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  // Search stocks
-  const searchStocks = async (query: string) => {
-    try {
-      setIsLoading(true);
-      const response = await fetch(
-        `/api/analyze/search?q=${encodeURIComponent(query)}`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setRecentStocks(data);
-      }
-    } catch (error) {
-      console.error("Failed to search stocks:", error);
-    } finally {
-      setIsLoading(false);
+  const filteredStocks = recentStocks.filter((stock) =>
+    stock.symbol.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const getSignalIcon = (signal: string) => {
+    switch (signal?.toLowerCase()) {
+      case "buy":
+      case "strong_buy":
+        return <TrendingUp className="w-4 h-4 text-green-600" />;
+      case "sell":
+      case "strong_sell":
+        return <TrendingDown className="w-4 h-4 text-red-600" />;
+      default:
+        return <Minus className="w-4 h-4 text-gray-600" />;
     }
   };
 
-  // Handle search input
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const query = e.target.value;
-    setSearchQuery(query);
-    if (query.length >= 2) {
-      searchStocks(query);
-    } else if (query.length === 0) {
-      loadRecentStocks();
+  const getSignalColor = (signal: string) => {
+    switch (signal?.toLowerCase()) {
+      case "buy":
+      case "strong_buy":
+        return "bg-green-100 text-green-800";
+      case "sell":
+      case "strong_sell":
+        return "bg-red-100 text-red-800";
+      default:
+        return "bg-gray-100 text-gray-800";
     }
   };
 
-  // Format last updated time
-  const formatLastUpdated = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      minimumFractionDigits: 2,
+    }).format(price);
+  };
 
-    if (diffInHours < 1) {
-      return "Just now";
-    } else if (diffInHours < 24) {
-      return `${Math.floor(diffInHours)}h ago`;
-    } else {
-      return date.toLocaleDateString();
-    }
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-IN", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
   return (
-    <div className="w-80 h-full border-r bg-gray-50/50 flex flex-col">
-      {/* Header */}
-      <div className="p-4 border-b bg-white">
-        <div className="flex items-center gap-2 mb-3">
-          <TrendingUp className="h-5 w-5 text-blue-600" />
-          <h2 className="font-semibold text-gray-900">Recent Analysis</h2>
-        </div>
+    <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+      <div className="p-4 border-b border-gray-200">
+        <h2 className="text-lg font-semibold text-gray-900 mb-3">
+          Recent Analysis
+        </h2>
         <div className="relative">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
           <Input
+            type="text"
             placeholder="Search stocks..."
-            value={searchQuery}
-            onChange={handleSearchChange}
-            className="pl-9 h-9"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
           />
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-2">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-32">
-            <RefreshCw className="h-5 w-5 animate-spin text-gray-400" />
-            <span className="ml-2 text-sm text-gray-500">Loading...</span>
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="flex items-center justify-center p-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
-        ) : recentStocks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-32 text-center px-4">
-            <TrendingUp className="h-8 w-8 text-gray-300 mb-2" />
-            <p className="text-sm text-gray-500">No recent analysis found</p>
-            <p className="text-xs text-gray-400 mt-1">
-              Search for stocks to get started
-            </p>
+        ) : filteredStocks.length === 0 ? (
+          <div className="p-4 text-center text-gray-500">
+            {searchTerm ? "No stocks found" : "No recent analysis"}
           </div>
         ) : (
-          <div className="space-y-1">
-            {recentStocks.map((stock) => (
-              <Card
+          <div className="p-2">
+            {filteredStocks.map((stock) => (
+              <div
                 key={stock.symbol}
-                className="p-3 cursor-pointer hover:bg-blue-50 hover:border-blue-200 transition-colors duration-150 min-h-[60px]"
                 onClick={() => onStockSelect(stock.symbol)}
+                className="p-3 rounded-lg hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-200 mb-2 transition-colors"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900 truncate">
-                        {stock.symbol}
-                      </span>
-                      <span
-                        className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                          stock.signal.includes("buy")
-                            ? "bg-green-100 text-green-700"
-                            : stock.signal.includes("sell")
-                            ? "bg-red-100 text-red-700"
-                            : "bg-yellow-100 text-yellow-700"
-                        }`}
-                      >
-                        {stock.signal.toUpperCase()}
-                      </span>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    {getSignalIcon(stock.signal)}
+                    <span className="font-medium text-gray-900">
+                      {stock.symbol}
+                    </span>
+                  </div>
+                  <Badge className={`text-xs ${getSignalColor(stock.signal)}`}>
+                    {stock.signal?.replace("_", " ").toUpperCase()}
+                  </Badge>
+                </div>
+
+                <div className="flex items-center justify-between text-sm text-gray-600">
+                  <span>{formatPrice(stock.price)}</span>
+                  <span>{formatDate(stock.last_updated_at)}</span>
+                </div>
+
+                {stock.swing_score && (
+                  <div className="mt-2">
+                    <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                      <span>Swing Score</span>
+                      <span>{stock.swing_score}/10</span>
                     </div>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-sm font-medium text-gray-900">
-                        ₹{stock.price.toFixed(2)}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {formatLastUpdated(stock.last_updated_at)}
-                      </span>
+                    <div className="w-full bg-gray-200 rounded-full h-1">
+                      <div
+                        className="bg-blue-600 h-1 rounded-full transition-all duration-300"
+                        style={{ width: `${(stock.swing_score / 10) * 100}%` }}
+                      ></div>
                     </div>
                   </div>
-                </div>
-              </Card>
+                )}
+              </div>
             ))}
           </div>
         )}

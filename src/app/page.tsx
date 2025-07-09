@@ -5,9 +5,12 @@ import { RecentStocksSidebar } from "@/components/RecentStocksSidebar";
 import { StockChart } from "@/components/StockChart";
 import { Navbar } from "@/components/ui/navbar";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useAuth } from "@/contexts/AuthContext";
+import { AuthModal } from "@/components/auth/AuthModal";
 import { useState, useCallback } from "react";
 
 export default function Home() {
+  const { user, loading } = useAuth();
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [selectedInstrumentKey, setSelectedInstrumentKey] = useState<
     string | null
@@ -109,6 +112,38 @@ export default function Home() {
     // No need for ref manipulation
   }, []);
 
+  // Show loading screen while checking authentication
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show auth modal if user is not logged in
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+        <Navbar />
+        <div className="flex items-center justify-center h-[calc(100vh-64px)] px-4">
+          <div className="w-full max-w-lg mx-auto">
+            <AuthModal
+              isOpen={true}
+              onClose={() => {}}
+              defaultMode="login"
+              persistent={true}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Main dashboard for authenticated users
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />

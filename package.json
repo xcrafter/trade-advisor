@@ -10,6 +10,8 @@
     "start": "next start",
     "lint": "next lint",
     "db:setup": "echo 'Please run the SQL schema from database/schema.sql in your Supabase SQL editor'",
+    "auth:setup": "node scripts/setup-admin-user.js",
+    "auth:manage": "node scripts/user-management.js",
     "convert-upstox": "node scripts/convert-upstox-instruments.js",
     "migrate-instruments": "node scripts/migrate-instruments-to-db.js"
   },

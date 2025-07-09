@@ -16,51 +16,13 @@ export function EmptyState({ onSearchFocus }: EmptyStateProps) {
       </div>
 
       <h2 className="text-2xl font-bold text-gray-900 mb-2">
-        Welcome to Stock Analyzer
+        Welcome to Swing Trade Advisor
       </h2>
 
       <p className="text-gray-600 mb-6 max-w-md">
         Get comprehensive technical analysis and AI-powered insights for your
         stock investments. Search for a stock to get started.
       </p>
-
-      <div className="flex flex-col sm:flex-row gap-3">
-        <Button onClick={onSearchFocus} className="flex items-center gap-2">
-          <Search className="h-4 w-4" />
-          Search Stocks
-        </Button>
-
-        <Button variant="outline" className="flex items-center gap-2">
-          <TrendingUp className="h-4 w-4" />
-          View Recent Analysis
-        </Button>
-      </div>
-
-      <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl">
-        <div className="bg-gray-50 rounded-lg p-4">
-          <div className="text-blue-600 mb-2">📊</div>
-          <h3 className="font-semibold text-gray-900 mb-1">
-            Technical Analysis
-          </h3>
-          <p className="text-sm text-gray-600">
-            RSI, MACD, Moving Averages, and more
-          </p>
-        </div>
-
-        <div className="bg-gray-50 rounded-lg p-4">
-          <div className="text-green-600 mb-2">🤖</div>
-          <h3 className="font-semibold text-gray-900 mb-1">AI Insights</h3>
-          <p className="text-sm text-gray-600">Smart trading recommendations</p>
-        </div>
-
-        <div className="bg-gray-50 rounded-lg p-4">
-          <div className="text-purple-600 mb-2">💰</div>
-          <h3 className="font-semibold text-gray-900 mb-1">Risk Management</h3>
-          <p className="text-sm text-gray-600">
-            Stop loss and target calculations
-          </p>
-        </div>
-      </div>
     </div>
   );
 }
