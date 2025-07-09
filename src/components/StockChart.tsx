@@ -226,7 +226,7 @@ export function StockChart({
   return (
     <div className="w-full space-y-6">
       {/* Header Section */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border relative">
+      <div className="bg-white p-6 rounded-lg shadow-sm border">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">{analysis.symbol}</h1>
@@ -246,43 +246,33 @@ export function StockChart({
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div
-              className={`text-2xl font-bold ${getSignalColor(
-                analysis.signal
-              )}`}
-            >
-              {analysis.signal.toUpperCase()}
-            </div>
-            <Badge variant="outline" className="text-lg px-3 py-1">
-              {analysis.confidence_level}
-            </Badge>
-          </div>
-        </div>
 
-        {/* Action Buttons - Bottom Right of Header */}
-        <div className="absolute bottom-2 right-2 flex gap-2">
-          <Button
-            onClick={handleRefresh}
-            disabled={isLoading}
-            variant="outline"
-            size="sm"
-            className="h-8 w-8 p-0 bg-white shadow-md hover:shadow-lg border-gray-300"
-            title="Refresh Analysis"
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
-            />
-          </Button>
-          <Button
-            onClick={handleDelete}
-            variant="outline"
-            size="sm"
-            className="h-8 w-8 p-0 bg-white shadow-md hover:shadow-lg border-red-300 text-red-500 hover:text-red-700 hover:bg-red-50"
-            title="Delete Analysis"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          {/* Action Buttons - Top Right of Header */}
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={handleRefresh}
+              disabled={isLoading}
+              variant="outline"
+              size="sm"
+              className="h-9 px-3 border-gray-300 hover:border-blue-400 hover:bg-blue-50"
+              title="Refresh Analysis"
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </Button>
+            <Button
+              onClick={handleDelete}
+              variant="outline"
+              size="sm"
+              className="h-9 px-3 border-red-300 text-red-600 hover:border-red-400 hover:bg-red-50 hover:text-red-700"
+              title="Delete Analysis"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -297,6 +287,20 @@ export function StockChart({
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-sm font-medium">Action:</span>
+                <span
+                  className={`font-bold ${getSignalColor(analysis.signal)}`}
+                >
+                  {analysis.signal.toUpperCase()}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm font-medium">Confidence:</span>
+                <Badge variant="outline" className="text-sm">
+                  {analysis.confidence_level}
+                </Badge>
+              </div>
               <div className="flex justify-between">
                 <span className="text-sm font-medium">Buy Price:</span>
                 <span className="text-green-600">
