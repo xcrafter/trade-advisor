@@ -893,13 +893,16 @@ export class TechnicalAnalysis {
         calculateSMA(prices, Math.min(50, prices.length)).toFixed(2)
       ),
       sma_200: Number(
-        calculateSMA(prices, Math.min(60, prices.length)).toFixed(2)
+        calculateSMA(prices, Math.min(200, prices.length)).toFixed(2)
       ),
       ema_9: Number(
         calculateEMA(prices, Math.min(9, prices.length)).toFixed(2)
       ),
       ema_21: Number(
         calculateEMA(prices, Math.min(21, prices.length)).toFixed(2)
+      ),
+      ema_50: Number(
+        calculateEMA(prices, Math.min(50, prices.length)).toFixed(2)
       ),
     };
 
@@ -959,7 +962,7 @@ export class TechnicalAnalysis {
       sma_50: moving_averages.sma_50,
       sma_200: moving_averages.sma_200,
       ema_21: moving_averages.ema_21,
-      ema_50: 0, // Not calculated yet
+      ema_50: moving_averages.ema_50,
       trend_direction: trend,
       trend_strength: swingScoreInput.trend.strength,
       golden_cross: moving_averages.sma_50 > moving_averages.sma_200,
