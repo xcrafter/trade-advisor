@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, forwardRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +30,7 @@ import { type InstrumentSearchResult } from "@/models/InstrumentModel";
 interface StockAutocompleteProps {
   value?: string;
   onChange?: (symbol: string, stock: InstrumentSearchResult | null) => void;
-  onSelect?: (stock: InstrumentSearchResult) => void;
+  onSelect?: (instrumentKey: string) => void;
   placeholder?: string;
   disabled?: boolean;
   className?: string;
@@ -39,17 +39,23 @@ interface StockAutocompleteProps {
   exchange?: string;
 }
 
-export default function StockAutocomplete({
-  value = "",
-  onChange,
-  onSelect,
-  placeholder = "Search stocks by symbol or company name...",
-  disabled = false,
-  className = "",
-  showCompanyName = true,
-  limit = 8,
-  exchange,
-}: StockAutocompleteProps) {
+export const StockAutocomplete = forwardRef<
+  HTMLButtonElement,
+  StockAutocompleteProps
+>(function StockAutocomplete(
+  {
+    value = "",
+    onChange,
+    onSelect,
+    placeholder = "Search stocks by symbol or company name...",
+    disabled = false,
+    className = "",
+    showCompanyName = true,
+    limit = 8,
+    exchange,
+  }: StockAutocompleteProps,
+  ref
+) {
   const [query, setQuery] = useState(value);
   const [recommendations, setRecommendations] = useState<
     InstrumentSearchResult[]
@@ -158,7 +164,7 @@ export default function StockAutocomplete({
     setSelectedStock(stock);
     setOpen(false);
     onChange?.(stock.symbol, stock);
-    onSelect?.(stock);
+    onSelect?.(stock.instrument_key);
   };
 
   // Get match type badge
@@ -190,6 +196,7 @@ export default function StockAutocomplete({
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
+            ref={ref}
             variant="outline"
             role="combobox"
             aria-expanded={open}
@@ -330,7 +337,7 @@ export default function StockAutocomplete({
               </span>
               <span className="text-muted-foreground">•</span>
               <span className="text-muted-foreground">
-                {selectedStock.company}
+                {selectedStock.company_clean}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -341,4 +348,4 @@ export default function StockAutocomplete({
       )}
     </div>
   );
-}
+});

@@ -35,17 +35,54 @@ function getLastTradingDays(days: number): {
   return { startDate, endDate };
 }
 
+interface CacheEntry {
+  data: CandleData[];
+  timestamp: number;
+}
+
 export class UpstoxAPI {
   private apiKey: string;
+  private pendingRequests: Map<string, Promise<unknown>> = new Map();
+  private cache: Map<string, CacheEntry> = new Map();
+  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   constructor(config: UpstoxConfig) {
     this.apiKey = config.apiKey;
   }
 
   /**
-   * Make an authenticated API request
+   * Make an authenticated API request with deduplication
    */
   private async request<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    const requestKey = `${endpoint}:${JSON.stringify(options)}`;
+
+    // Check if the same request is already in progress
+    if (this.pendingRequests.has(requestKey)) {
+      console.log(`[UpstoxAPI] Deduplicating request: ${endpoint}`);
+      return this.pendingRequests.get(requestKey)! as Promise<T>;
+    }
+
+    // Create the request promise
+    const requestPromise = this.makeRequest<T>(endpoint, options);
+
+    // Store the promise to prevent duplicate requests
+    this.pendingRequests.set(requestKey, requestPromise);
+
+    // Clean up the promise when it resolves/rejects
+    requestPromise.finally(() => {
+      this.pendingRequests.delete(requestKey);
+    });
+
+    return requestPromise;
+  }
+
+  /**
+   * Make the actual API request
+   */
+  private async makeRequest<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
@@ -95,13 +132,37 @@ export class UpstoxAPI {
       // Format dates as YYYY-MM-DD
       const from = fromDate.toISOString().split("T")[0];
       const to = toDate.toISOString().split("T")[0];
+      const cacheKey = `${instrumentKey}:${from}:${to}`;
+
+      // Check cache first
+      const cached = this.cache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+        console.log(`[UpstoxAPI] Cache hit for ${instrumentKey}`);
+        return cached.data;
+      }
+
+      const endpoint = `/historical-candle/${instrumentKey}/days/1/${to}/${from}`;
+      console.log(`[UpstoxAPI] Calling: ${endpoint}`);
 
       const response = await this.request<{
         status: string;
         data: { candles: RawCandleData[] };
-      }>(`/historical-candle/${instrumentKey}/days/1/${to}/${from}`);
+      }>(endpoint);
 
-      return response.data.candles.map((candle) => this.convertCandle(candle));
+      const candles = response.data.candles.map((candle) =>
+        this.convertCandle(candle)
+      );
+      console.log(
+        `[UpstoxAPI] Returning ${candles.length} candles for ${instrumentKey}`
+      );
+
+      // Cache the result
+      this.cache.set(cacheKey, {
+        data: candles,
+        timestamp: Date.now(),
+      });
+
+      return candles;
     } catch (error) {
       console.error("Failed to fetch daily candles:", error);
       throw new Error("Failed to fetch daily candles");

@@ -3,8 +3,10 @@ import {
   InstrumentModel,
   type InstrumentSearchResult,
 } from "@/models/InstrumentModel";
+import { StockAnalysisModel } from "@/models/StockAnalysisModel";
 import { UpstoxAPI } from "@/lib/upstox";
 import { TechnicalAnalysis } from "@/lib/indicators";
+import { type CandleData } from "@/types/upstox";
 import {
   calculatePriceRanges,
   calculateFibonacciLevels,
@@ -130,6 +132,7 @@ export interface StockAnalysis {
   trading_plan: string;
   key_catalysts: string;
   risk_factors: string;
+  last_updated_at: string;
 }
 
 export class StockController {
@@ -156,11 +159,39 @@ export class StockController {
   /**
    * Analyze a stock for trading opportunities
    */
-  async analyzeStock(instrumentKey: string): Promise<StockAnalysis> {
+  async analyzeStock(
+    instrumentKey: string,
+    forceRefresh: boolean = false
+  ): Promise<StockAnalysis> {
     // First get instrument details
     const instrument = await InstrumentModel.findByInstrumentKey(instrumentKey);
     if (!instrument) {
       throw new Error("Instrument not found");
+    }
+
+    // Check if we have recent analysis and don't need to refresh
+    if (!forceRefresh) {
+      try {
+        const cachedAnalysis = await StockAnalysisModel.getBySymbol(
+          instrument.symbol
+        );
+        if (cachedAnalysis) {
+          const lastUpdated = new Date(cachedAnalysis.last_updated_at);
+          const now = new Date();
+          const hoursSinceUpdate =
+            (now.getTime() - lastUpdated.getTime()) / (1000 * 60 * 60);
+
+          // Use cached data if less than 4 hours old
+          if (hoursSinceUpdate < 4) {
+            return cachedAnalysis;
+          }
+        }
+      } catch (error) {
+        console.warn(
+          "Failed to check cached analysis, proceeding with fresh analysis:",
+          error
+        );
+      }
     }
 
     // Then find or create stock record
@@ -173,29 +204,51 @@ export class StockController {
       });
     }
 
-    // Get historical data for analysis
+    // Get historical data for analysis - REAL DATA ONLY
     const toDate = new Date();
     const fromDate = new Date();
     fromDate.setDate(fromDate.getDate() - 60); // Get 60 days of data for better indicator calculation
 
-    const upstoxCandles = await this.upstoxApi.getDailyCandles(
-      instrumentKey,
-      fromDate,
-      toDate
-    );
+    let candles: CandleData[];
+    try {
+      console.log(
+        `[StockController] Fetching candles for ${instrument.symbol} (${instrumentKey})`
+      );
+      const upstoxCandles = await this.upstoxApi.getDailyCandles(
+        instrumentKey,
+        fromDate,
+        toDate
+      );
+      console.log(
+        `[StockController] Received ${upstoxCandles.length} candles for ${instrument.symbol}`
+      );
 
-    // Convert candle format for technical analysis
-    const candles = upstoxCandles.map((candle) => ({
-      ...candle,
-      timestamp: new Date(candle.timestamp).getTime(),
-    }));
+      // Convert candle format for technical analysis
+      candles = upstoxCandles.map((candle) => ({
+        ...candle,
+        timestamp: new Date(candle.timestamp).getTime(),
+      }));
 
-    // Ensure we have enough data
-    if (candles.length < 20) {
-      throw new Error("Insufficient historical data for analysis");
+      if (candles.length === 0) {
+        throw new Error("No historical data available from Upstox API");
+      }
+
+      if (candles.length < 20) {
+        throw new Error(
+          `Insufficient data for analysis: only ${candles.length} candles available, minimum 20 required`
+        );
+      }
+    } catch (error) {
+      console.error("Failed to fetch real market data:", error);
+      throw new Error(
+        `Unable to analyze ${
+          instrument.symbol
+        }: Real market data unavailable. ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     }
 
-    // Get current price from the last candle
     const currentPrice = candles[candles.length - 1].close;
 
     // Calculate technical indicators
@@ -223,7 +276,7 @@ export class StockController {
     const priceRanges = calculatePriceRanges(candles);
     const fibonacciLevels = calculateFibonacciLevels(candles);
 
-    return {
+    const analysis: StockAnalysis = {
       ...indicators,
       ...aiSignal,
       symbol: instrument.symbol,
@@ -249,6 +302,34 @@ export class StockController {
       trading_plan: aiSignal.tradingPlan,
       key_catalysts: aiSignal.keyCatalysts,
       risk_factors: aiSignal.riskFactors,
+      last_updated_at: new Date().toISOString(),
     };
+
+    // Save analysis to database (with error handling)
+    try {
+      await StockAnalysisModel.upsert(analysis, instrumentKey);
+    } catch (error) {
+      console.error("Failed to save analysis to database:", error);
+      // Continue without saving to database
+    }
+
+    return analysis;
+  }
+
+  /**
+   * Get recently analyzed stocks
+   */
+  async getRecentAnalysis(limit: number = 10): Promise<StockAnalysis[]> {
+    return StockAnalysisModel.getRecent(limit);
+  }
+
+  /**
+   * Search analyzed stocks
+   */
+  async searchAnalyzedStocks(
+    query: string,
+    limit: number = 10
+  ): Promise<StockAnalysis[]> {
+    return StockAnalysisModel.search(query, limit);
   }
 }

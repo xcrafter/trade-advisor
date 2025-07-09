@@ -417,6 +417,8 @@ export function calculateVolatilityPercentile(candles: CandleData[]): number {
     returns.push(dailyReturn);
   }
 
+  if (returns.length === 0) return 0;
+
   // Calculate standard deviation of returns
   const avgReturn = returns.reduce((sum, r) => sum + r, 0) / returns.length;
   const squaredDiffs = returns.map((r) => Math.pow(r - avgReturn, 2));
@@ -427,11 +429,14 @@ export function calculateVolatilityPercentile(candles: CandleData[]): number {
   // Annualize volatility (252 trading days)
   const annualizedVol = stdDev * Math.sqrt(252);
 
-  // Convert to percentile (0-100)
-  // For Indian markets, typical stock volatility ranges from 20% to 80% annualized
+  // For Indian markets, typical stock volatility ranges from 15% to 60% annualized
   // Map this range to 0-100 percentile for better representation of NSE/BSE behavior
+  // Use a more realistic range for Indian equity markets
+  const minVol = 15; // 15% minimum volatility
+  const maxVol = 60; // 60% maximum volatility
+
   const percentile = Math.min(
-    Math.max(((annualizedVol - 20) / (80 - 20)) * 100, 0),
+    Math.max(((annualizedVol - minVol) / (maxVol - minVol)) * 100, 0),
     100
   );
 
@@ -449,16 +454,18 @@ export function findSupportResistanceLevels(
 } {
   if (candles.length < lookbackPeriod) {
     const currentPrice = candles[candles.length - 1]?.close || 0;
+    // Use more realistic support/resistance levels for Indian markets
+    // Based on typical volatility and price movements
     return {
       support: [
-        Number((currentPrice * 0.98).toFixed(2)),
-        Number((currentPrice * 0.96).toFixed(2)),
-        Number((currentPrice * 0.94).toFixed(2)),
+        Number((currentPrice * 0.985).toFixed(2)), // 1.5% below
+        Number((currentPrice * 0.97).toFixed(2)), // 3% below
+        Number((currentPrice * 0.95).toFixed(2)), // 5% below
       ],
       resistance: [
-        Number((currentPrice * 1.02).toFixed(2)),
-        Number((currentPrice * 1.04).toFixed(2)),
-        Number((currentPrice * 1.06).toFixed(2)),
+        Number((currentPrice * 1.015).toFixed(2)), // 1.5% above
+        Number((currentPrice * 1.03).toFixed(2)), // 3% above
+        Number((currentPrice * 1.05).toFixed(2)), // 5% above
       ],
     };
   }
@@ -468,13 +475,13 @@ export function findSupportResistanceLevels(
   const lows = recentCandles.map((c) => c.low);
   const currentPrice = recentCandles[recentCandles.length - 1].close;
 
-  // Find local maxima and minima with volume confirmation
+  // Find local maxima and minima with improved logic
   const resistance: { price: number; strength: number }[] = [];
   const support: { price: number; strength: number }[] = [];
 
-  // Window size for local extrema
-  const window = 5;
-  const volumeThreshold = 1.2; // 20% above average volume
+  // Use smaller window for more granular detection
+  const window = 3;
+  const volumeThreshold = 1.1; // 10% above average volume (more lenient)
 
   for (let i = window; i < highs.length - window; i++) {
     const localHighs = highs.slice(i - window, i + window + 1);
@@ -485,65 +492,126 @@ export function findSupportResistanceLevels(
     const avgVolume =
       localVolumes.reduce((sum, vol) => sum + vol, 0) / localVolumes.length;
 
-    // Check for local maximum (resistance) with volume confirmation
-    if (
-      highs[i] === Math.max(...localHighs) &&
-      recentCandles[i].volume > avgVolume * volumeThreshold
-    ) {
-      // Calculate level strength based on retests
+    // Check for local maximum (resistance)
+    if (highs[i] === Math.max(...localHighs)) {
+      // Calculate level strength based on retests and volume
       let strength = 1;
+      const volumeBonus =
+        recentCandles[i].volume > avgVolume * volumeThreshold ? 1 : 0;
+
+      // Check for retests within 2% tolerance
       for (let j = i + 1; j < highs.length; j++) {
-        if (Math.abs(highs[j] - highs[i]) / highs[i] < 0.01) {
-          // 1% tolerance
+        if (Math.abs(highs[j] - highs[i]) / highs[i] < 0.02) {
           strength++;
         }
       }
-      resistance.push({ price: Number(highs[i].toFixed(2)), strength });
+
+      resistance.push({
+        price: Number(highs[i].toFixed(2)),
+        strength: strength + volumeBonus,
+      });
     }
 
-    // Check for local minimum (support) with volume confirmation
-    if (
-      lows[i] === Math.min(...localLows) &&
-      recentCandles[i].volume > avgVolume * volumeThreshold
-    ) {
-      // Calculate level strength based on retests
+    // Check for local minimum (support)
+    if (lows[i] === Math.min(...localLows)) {
+      // Calculate level strength based on retests and volume
       let strength = 1;
+      const volumeBonus =
+        recentCandles[i].volume > avgVolume * volumeThreshold ? 1 : 0;
+
+      // Check for retests within 2% tolerance
       for (let j = i + 1; j < lows.length; j++) {
-        if (Math.abs(lows[j] - lows[i]) / lows[i] < 0.01) {
-          // 1% tolerance
+        if (Math.abs(lows[j] - lows[i]) / lows[i] < 0.02) {
           strength++;
         }
       }
-      support.push({ price: Number(lows[i].toFixed(2)), strength });
+
+      support.push({
+        price: Number(lows[i].toFixed(2)),
+        strength: strength + volumeBonus,
+      });
     }
   }
 
-  // If no levels found, use price-based levels
+  // Also add pivot points as additional support/resistance
+  const pivotHigh = Math.max(...highs);
+  const pivotLow = Math.min(...lows);
+  const pivotClose = currentPrice;
+  const pivot = (pivotHigh + pivotLow + pivotClose) / 3;
+
+  // Add pivot-based levels
+  resistance.push(
+    {
+      price: Number((pivot + (pivotHigh - pivotLow) * 0.382).toFixed(2)),
+      strength: 2,
+    },
+    {
+      price: Number((pivot + (pivotHigh - pivotLow) * 0.618).toFixed(2)),
+      strength: 2,
+    }
+  );
+
+  support.push(
+    {
+      price: Number((pivot - (pivotHigh - pivotLow) * 0.382).toFixed(2)),
+      strength: 2,
+    },
+    {
+      price: Number((pivot - (pivotHigh - pivotLow) * 0.618).toFixed(2)),
+      strength: 2,
+    }
+  );
+
+  // If still no levels found, use dynamic percentage-based levels
   if (support.length === 0) {
+    const atr = calculateATR(recentCandles, 14).atr;
+
     support.push(
-      { price: Number((currentPrice * 0.98).toFixed(2)), strength: 1 },
-      { price: Number((currentPrice * 0.96).toFixed(2)), strength: 1 },
-      { price: Number((currentPrice * 0.94).toFixed(2)), strength: 1 }
+      { price: Number((currentPrice - atr * 1.5).toFixed(2)), strength: 1 },
+      { price: Number((currentPrice - atr * 2.5).toFixed(2)), strength: 1 },
+      { price: Number((currentPrice - atr * 3.5).toFixed(2)), strength: 1 }
     );
   }
+
   if (resistance.length === 0) {
+    const atr = calculateATR(recentCandles, 14).atr;
+
     resistance.push(
-      { price: Number((currentPrice * 1.02).toFixed(2)), strength: 1 },
-      { price: Number((currentPrice * 1.04).toFixed(2)), strength: 1 },
-      { price: Number((currentPrice * 1.06).toFixed(2)), strength: 1 }
+      { price: Number((currentPrice + atr * 1.5).toFixed(2)), strength: 1 },
+      { price: Number((currentPrice + atr * 2.5).toFixed(2)), strength: 1 },
+      { price: Number((currentPrice + atr * 3.5).toFixed(2)), strength: 1 }
     );
   }
 
   // Sort by strength and price, then take top 3 levels
   const topSupport = support
+    .filter((level) => level.price < currentPrice) // Only support below current price
     .sort((a, b) => b.strength - a.strength || b.price - a.price)
     .slice(0, 3)
     .map((level) => level.price);
 
   const topResistance = resistance
+    .filter((level) => level.price > currentPrice) // Only resistance above current price
     .sort((a, b) => b.strength - a.strength || a.price - b.price)
     .slice(0, 3)
     .map((level) => level.price);
+
+  // Ensure we have at least 3 levels each
+  if (topSupport.length < 3) {
+    const atr = calculateATR(recentCandles, 14).atr;
+    while (topSupport.length < 3) {
+      const multiplier = topSupport.length + 1;
+      topSupport.push(Number((currentPrice - atr * multiplier).toFixed(2)));
+    }
+  }
+
+  if (topResistance.length < 3) {
+    const atr = calculateATR(recentCandles, 14).atr;
+    while (topResistance.length < 3) {
+      const multiplier = topResistance.length + 1;
+      topResistance.push(Number((currentPrice + atr * multiplier).toFixed(2)));
+    }
+  }
 
   return {
     support: topSupport,
@@ -774,6 +842,34 @@ export class TechnicalAnalysis {
     const trend = determineMarketRegime(candles);
     const atrData = calculateATR(candles, 21, this.marketConfig);
 
+    // Calculate Bollinger Bands
+    const bollingerBands = calculateBollingerBands(prices, 20, 2);
+
+    // Determine Bollinger position
+    let bollingerPosition:
+      | "above_upper"
+      | "upper_half"
+      | "middle"
+      | "lower_half"
+      | "below_lower";
+    if (currentPrice > bollingerBands.upper) {
+      bollingerPosition = "above_upper";
+    } else if (
+      currentPrice > bollingerBands.middle &&
+      currentPrice <= bollingerBands.upper
+    ) {
+      bollingerPosition = "upper_half";
+    } else if (currentPrice < bollingerBands.lower) {
+      bollingerPosition = "below_lower";
+    } else if (
+      currentPrice < bollingerBands.middle &&
+      currentPrice >= bollingerBands.lower
+    ) {
+      bollingerPosition = "lower_half";
+    } else {
+      bollingerPosition = "middle";
+    }
+
     // Find nearest levels
     const nearestSupport =
       support.find((level) => level < currentPrice) || support[0];
@@ -893,9 +989,9 @@ export class TechnicalAnalysis {
 
       // Volatility & Risk
       atr_21: atrData.atr,
-      bollinger_upper: 0, // TODO: Implement
-      bollinger_lower: 0, // TODO: Implement
-      bollinger_position: "middle", // TODO: Implement
+      bollinger_upper: Number(bollingerBands.upper.toFixed(2)),
+      bollinger_lower: Number(bollingerBands.lower.toFixed(2)),
+      bollinger_position: bollingerPosition,
       volatility_percentile: volatility,
       volatility_rating: swingScoreInput.volatility,
       suggested_stop_loss: suggestedStopLoss,

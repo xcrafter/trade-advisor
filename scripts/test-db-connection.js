@@ -1,7 +1,14 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const { createClient } = require("@supabase/supabase-js");
-require("dotenv").config({
-  path: require("path").join(__dirname, "..", ".env.local"),
+import { createClient } from "@supabase/supabase-js";
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({
+  path: path.join(__dirname, "..", ".env.local"),
 });
 
 // Initialize Supabase client
@@ -65,6 +72,31 @@ async function testConnection() {
     console.log(
       `📊 Current instruments count: ${instrumentsData?.length || 0}`
     );
+
+    // Test stock_analysis table
+    console.log("\n🔍 Checking if stock_analysis table exists...");
+    const { data: analysisData, error: analysisError } = await supabase
+      .from("stock_analysis")
+      .select("count", { count: "exact", head: true });
+
+    if (analysisError) {
+      console.error("❌ Stock analysis table check failed:");
+      console.error("Error message:", analysisError.message);
+      console.error("Error code:", analysisError.code);
+      console.error("Error details:", analysisError.details);
+      console.error("Error hint:", analysisError.hint);
+
+      if (analysisError.code === "42P01") {
+        console.error("\n💡 The 'stock_analysis' table does not exist.");
+        console.error("Please run the database migration first:");
+        console.error("1. Open your Supabase SQL Editor");
+        console.error("2. Run the SQL from: database/migrate-to-json.sql");
+      }
+      return;
+    }
+
+    console.log("✅ Stock analysis table exists");
+    console.log(`📊 Current analysis count: ${analysisData?.length || 0}`);
 
     // Test a simple query
     console.log("\n🧪 Testing a simple query...");
