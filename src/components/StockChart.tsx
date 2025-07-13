@@ -52,11 +52,11 @@ export function StockChart({
       try {
         const params = new URLSearchParams();
         if (forceRefresh) {
-          params.append("refresh", "true");
+          params.append("forceRefresh", "true");
         }
 
         const response = await fetch(
-          `/api/analyze?instrument_key=${encodeURIComponent(
+          `/api/analyze?instrumentKey=${encodeURIComponent(
             instrumentKey
           )}&${params.toString()}`
         );
