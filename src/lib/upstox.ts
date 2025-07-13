@@ -47,6 +47,7 @@ interface QuoteCacheEntry {
 }
 
 export class UpstoxAPI {
+  private static instance: UpstoxAPI | null = null;
   private apiKey: string;
   private pendingRequests: Map<string, Promise<unknown>> = new Map();
   private cache: Map<string, CacheEntry> = new Map();
@@ -56,6 +57,31 @@ export class UpstoxAPI {
 
   constructor(config: UpstoxConfig) {
     this.apiKey = config.apiKey;
+  }
+
+  /**
+   * Get or create singleton instance
+   */
+  public static getInstance(config?: UpstoxConfig): UpstoxAPI {
+    if (!UpstoxAPI.instance) {
+      if (!config) {
+        throw new Error(
+          "UpstoxAPI config is required for first initialization"
+        );
+      }
+      UpstoxAPI.instance = new UpstoxAPI(config);
+      console.log("[UpstoxAPI] Created singleton instance");
+    } else {
+      console.log("[UpstoxAPI] Reusing existing singleton instance");
+    }
+    return UpstoxAPI.instance;
+  }
+
+  /**
+   * Reset singleton instance (useful for testing)
+   */
+  public static resetInstance(): void {
+    UpstoxAPI.instance = null;
   }
 
   /**

@@ -4,7 +4,7 @@ import { StockAnalysisModel } from "@/models/StockAnalysisModel";
 import { UpstoxAPI } from "@/lib/upstox";
 import { TechnicalAnalysis } from "@/lib/indicators";
 
-const upstoxApi = new UpstoxAPI({
+const upstoxApi = UpstoxAPI.getInstance({
   apiKey: process.env.UPSTOX_API_KEY!,
 });
 

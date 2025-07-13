@@ -301,16 +301,32 @@ export class StockController {
         }: ₹${currentPrice} (${priceChangePercent.toFixed(2)}%)`
       );
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
       console.warn(
-        `[StockController] Failed to fetch real-time quote, using last candle close price:`,
-        error
+        `[StockController] Market appears to be offline, using historical data for ${instrument.symbol}`,
+        errorMessage
       );
+
+      // Use last candle close price
       currentPrice = candles[candles.length - 1].close;
+
+      // Calculate change from previous candle
       const previousClose =
         candles.length > 1 ? candles[candles.length - 2].close : currentPrice;
       priceChange = currentPrice - previousClose;
       priceChangePercent =
-        ((currentPrice - previousClose) / previousClose) * 100;
+        previousClose > 0
+          ? ((currentPrice - previousClose) / previousClose) * 100
+          : 0;
+
+      console.log(
+        `[StockController] Using historical data for ${
+          instrument.symbol
+        }: ₹${currentPrice} (${priceChangePercent.toFixed(
+          2
+        )}% from previous candle)`
+      );
     }
 
     // Calculate technical indicators

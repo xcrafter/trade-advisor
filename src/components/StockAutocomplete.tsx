@@ -81,7 +81,7 @@ export const StockAutocomplete = React.forwardRef<
       try {
         setLoading(true);
         const params = new URLSearchParams({
-          query: searchQuery,
+          q: searchQuery,
           limit: limit.toString(),
         });
 

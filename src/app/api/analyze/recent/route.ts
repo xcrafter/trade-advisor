@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get("limit") || "10");
 
-    const upstoxApi = new UpstoxAPI({
+    const upstoxApi = UpstoxAPI.getInstance({
       apiKey: process.env.UPSTOX_API_KEY || "",
     });
     const technicalAnalysis = new TechnicalAnalysis(
