@@ -13,7 +13,8 @@
     "auth:setup": "node scripts/setup-admin-user.js",
     "auth:manage": "node scripts/user-management.js",
     "convert-upstox": "node scripts/convert-upstox-instruments.js",
-    "migrate-instruments": "node scripts/migrate-instruments-to-db.js"
+    "migrate-instruments": "node scripts/migrate-instruments-to-db.js",
+    "stocks:manage": "node scripts/manage-stock-activities.js"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.14",
