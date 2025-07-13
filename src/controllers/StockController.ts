@@ -1,4 +1,3 @@
-import { StockModel } from "@/models/StockModel";
 import {
   InstrumentModel,
   type InstrumentSearchResult,
@@ -6,12 +5,6 @@ import {
 import { StockAnalysisModel } from "@/models/StockAnalysisModel";
 import { UpstoxAPI } from "@/lib/upstox";
 import { TechnicalAnalysis } from "@/lib/indicators";
-import { type CandleData } from "@/types/upstox";
-import {
-  calculatePriceRanges,
-  calculateFibonacciLevels,
-  findSupportResistanceLevels,
-} from "@/lib/indicators";
 
 export interface StockAnalysis {
   // Basic Info
@@ -225,13 +218,6 @@ export class StockController {
 
           // Use cached data if less than 4 hours old
           if (hoursSinceUpdate < 4) {
-            // Add fallback values for new fields if they don't exist in cached data
-            if (cachedAnalysis.price_change === undefined) {
-              cachedAnalysis.price_change = 0;
-            }
-            if (cachedAnalysis.price_change_percent === undefined) {
-              cachedAnalysis.price_change_percent = 0;
-            }
             return cachedAnalysis;
           }
         }
@@ -243,181 +229,139 @@ export class StockController {
       }
     }
 
-    // Then find or create stock record
-    let stock = await StockModel.findByInstrumentKey(instrumentKey, userId);
-    if (!stock) {
-      stock = await StockModel.upsert({
-        symbol: instrument.symbol,
-        exchange: instrument.exchange,
-        instrument_key: instrumentKey,
-        user_id: userId,
-      });
+    // Get historical data
+    const candles = await this.upstoxApi.getLastTradingDaysData(instrumentKey);
+    if (!candles || candles.length === 0) {
+      throw new Error("No historical data available");
     }
 
-    // Get historical data for analysis - REAL DATA ONLY
-    const toDate = new Date();
-    const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 60); // Get 60 days of data for better indicator calculation
-
-    let candles: CandleData[];
-    try {
-      console.log(
-        `[StockController] Fetching candles for ${instrument.symbol} (${instrumentKey})`
-      );
-      const upstoxCandles = await this.upstoxApi.getDailyCandles(
-        instrumentKey,
-        fromDate,
-        toDate
-      );
-      console.log(
-        `[StockController] Received ${upstoxCandles.length} candles for ${instrument.symbol}`
-      );
-
-      // Convert candle format for technical analysis
-      candles = upstoxCandles.map((candle) => ({
-        ...candle,
-        timestamp: new Date(candle.timestamp).getTime(),
-      }));
-
-      if (candles.length === 0) {
-        throw new Error("No historical data available from Upstox API");
-      }
-
-      if (candles.length < 20) {
-        throw new Error(
-          `Insufficient data for analysis: only ${candles.length} candles available, minimum 20 required`
-        );
-      }
-    } catch (error) {
-      console.error("Failed to fetch real market data:", error);
-      throw new Error(
-        `Unable to analyze ${
-          instrument.symbol
-        }: Real market data unavailable. ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    }
-
-    // Get real-time current price and change information
+    // Get current market price
     let currentPrice: number;
     let priceChange: number;
     let priceChangePercent: number;
 
-    try {
-      console.log(
-        `[StockController] Fetching real-time quote for ${instrument.symbol}`
-      );
+    const skipDays = Number(process.env.NEXT_PUBLIC_SKIP_DAYS) || 0;
+    if (skipDays > 0) {
+      // Use the last candle's close price when skipping days
+      currentPrice = candles[candles.length - 1].close;
+      const previousClose = candles[candles.length - 2]?.close || currentPrice;
+      priceChange = currentPrice - previousClose;
+      priceChangePercent = (priceChange / previousClose) * 100;
+    } else {
+      // Get real-time price when not skipping days
       const quote = await this.upstoxApi.getMarketQuote(instrumentKey);
       currentPrice = quote.ltp;
       priceChange = quote.change;
       priceChangePercent = quote.changePercent;
-      console.log(
-        `[StockController] Real-time quote for ${
-          instrument.symbol
-        }: ₹${currentPrice} (${priceChangePercent.toFixed(2)}%)`
-      );
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      console.warn(
-        `[StockController] Market appears to be offline, using historical data for ${instrument.symbol}`,
-        errorMessage
-      );
-
-      // Use last candle close price
-      currentPrice = candles[candles.length - 1].close;
-
-      // Calculate change from previous candle
-      const previousClose =
-        candles.length > 1 ? candles[candles.length - 2].close : currentPrice;
-      priceChange = currentPrice - previousClose;
-      priceChangePercent =
-        previousClose > 0
-          ? ((currentPrice - previousClose) / previousClose) * 100
-          : 0;
-
-      console.log(
-        `[StockController] Using historical data for ${
-          instrument.symbol
-        }: ₹${currentPrice} (${priceChangePercent.toFixed(
-          2
-        )}% from previous candle)`
-      );
     }
 
-    // Calculate technical indicators
-    const indicators = await this.technicalAnalysis.calculateSwingIndicators(
-      candles
+    // Perform technical analysis
+    const analysis = await this.technicalAnalysis.analyze(
+      candles,
+      currentPrice
     );
-    const aiSignal = await this.technicalAnalysis.getAISignal(indicators);
 
-    // Calculate support and resistance levels
-    const { support, resistance } = findSupportResistanceLevels(candles);
-
-    // Find nearest levels
-    const nearestSupport =
-      support.find((level: number) => level < currentPrice) || support[0];
-    const nearestResistance =
-      resistance.find((level: number) => level > currentPrice) || resistance[0];
-
-    // Calculate distance percentages
-    const supportDistancePercent =
-      ((currentPrice - nearestSupport) / currentPrice) * 100;
-    const resistanceDistancePercent =
-      ((nearestResistance - currentPrice) / currentPrice) * 100;
-
-    // Calculate price ranges and fibonacci levels
-    const priceRanges = calculatePriceRanges(candles);
-    const fibonacciLevels = calculateFibonacciLevels(candles);
-
-    const analysis: StockAnalysis = {
-      ...indicators,
-      ...aiSignal,
+    // Create the full analysis object with default values for all required fields
+    const stockAnalysis: StockAnalysis = {
       symbol: instrument.symbol,
       price: currentPrice,
       price_change: priceChange,
       price_change_percent: priceChangePercent,
-      candles,
-      price_ranges: priceRanges,
-      support_levels: support,
-      resistance_levels: resistance,
-      nearest_support: nearestSupport,
-      nearest_resistance: nearestResistance,
-      support_distance_percent: supportDistancePercent,
-      resistance_distance_percent: resistanceDistancePercent,
-      fibonacci_levels: fibonacciLevels,
-      // Add missing properties from StockAnalysis interface
-      llm_opinion: aiSignal.opinion,
-      buy_price: aiSignal.buyPrice,
-      target_price_1: aiSignal.targetPrice1,
-      target_price_2: aiSignal.targetPrice2,
-      stop_loss: aiSignal.stopLoss,
-      holding_period: aiSignal.holdingPeriod,
-      position_size_percent: aiSignal.positionSizePercent,
-      risk_reward_ratio: aiSignal.riskRewardRatio,
-      trading_plan: aiSignal.tradingPlan,
-      key_catalysts: aiSignal.keyCatalysts,
-      risk_factors: aiSignal.riskFactors,
-
-      // Swing Trading Evaluation
-      swing_setup_quality: aiSignal.swingSetupQuality,
-      liquidity_check: aiSignal.liquidityCheck,
-      volatility_check: aiSignal.volatilityCheck,
-      market_trend_alignment: aiSignal.marketTrendAlignment,
-
+      candles: candles,
       last_updated_at: new Date().toISOString(),
+
+      // Default values for required fields
+      signal: "neutral",
+      direction: "NEUTRAL",
+      confidence_level: "low",
+      trend_direction: "sideways",
+      trend_strength: "weak",
+      swing_score: 0,
+      volatility_percentile: 0,
+      volatility_rating: "low",
+      sma_50: 0,
+      sma_200: 0,
+      ema_21: 0,
+      ema_50: 0,
+      golden_cross: false,
+      death_cross: false,
+      rsi_14: 0,
+      rsi_21: 0,
+      rsi_signal: "neutral",
+      macd_line: 0,
+      macd_signal: 0,
+      macd_histogram: 0,
+      macd_bullish_crossover: false,
+      stochastic: 0,
+      stochastic_signal: "neutral",
+      volume_20day_avg: 0,
+      volume_current: 0,
+      volume_vs_20day_avg: 0,
+      volume_trend_20day: "stable",
+      volume_breakout: false,
+      volume_quality: "poor",
+      accumulation_distribution: 0,
+      support_levels: [],
+      resistance_levels: [],
+      nearest_support: 0,
+      nearest_resistance: 0,
+      support_distance_percent: 0,
+      resistance_distance_percent: 0,
+      weekly_pivot: 0,
+      fibonacci_levels: [],
+      atr_21: 0,
+      bollinger_upper: 0,
+      bollinger_lower: 0,
+      bollinger_position: "middle",
+      market_regime: "sideways",
+      sector_performance: 0,
+      relative_strength: 0,
+      sector_correlation: 0,
+      llm_opinion: "",
+      buy_price: 0,
+      target_price_1: 0,
+      target_price_2: 0,
+      stop_loss: 0,
+      holding_period: "1-2_weeks",
+      position_size_percent: 0,
+      risk_reward_ratio: "0:0",
+      trading_plan: "",
+      key_catalysts: "",
+      risk_factors: "",
+      swing_setup_quality: "poor",
+      liquidity_check: "low",
+      volatility_check: "insufficient",
+      market_trend_alignment: "weak",
+      breakout_pattern: "none",
+      breakout_confidence: "low",
+      atr_validation: false,
+      atr_percent: 0,
+      price_range_valid: false,
+      price_range: "0-0",
+      pullback_to_support: false,
+      support_distance: 0,
+      volume_breakout_detected: false,
+      volume_multiple: 0,
+      rsi_bounce_zone: false,
+      rsi_zone: "0",
+      macd_bullish_crossover_detected: false,
+      macd_signal_status: "neutral",
+      rising_volume: false,
+      volume_trend: "stable",
+      price_ranges: {
+        day_3: { high: 0, low: 0 },
+        day_10: { high: 0, low: 0 },
+        day_30: { high: 0, low: 0 },
+      },
+
+      // Override defaults with actual analysis
+      ...analysis,
     };
 
-    // Save analysis to database (with error handling)
-    try {
-      await StockAnalysisModel.upsert(analysis, instrumentKey, userId);
-    } catch (error) {
-      console.error("Failed to save analysis to database:", error);
-      // Continue without saving to database
-    }
+    // Save the analysis
+    await StockAnalysisModel.upsert(stockAnalysis, instrumentKey, userId);
 
-    return analysis;
+    return stockAnalysis;
   }
 
   /**

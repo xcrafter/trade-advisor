@@ -6,6 +6,8 @@ import {
 } from "@/types/upstox";
 
 const UPSTOX_API_URL = "https://api.upstox.com/v3";
+const DEFAULT_CANDLE_DAYS = 60;
+const DEFAULT_SKIP_DAYS = 0;
 
 /**
  * Check if a date is a weekday (Monday-Friday)
@@ -16,15 +18,28 @@ function isWeekday(date: Date): boolean {
 }
 
 /**
- * Get start and end dates for last N trading days
+ * Get start and end dates for last N trading days, optionally skipping recent days
  */
-function getLastTradingDays(days: number): {
+function getLastTradingDays(
+  days: number,
+  skipDays: number = 0
+): {
   startDate: Date;
   endDate: Date;
 } {
+  // Calculate end date by skipping recent days
   const endDate = new Date();
+  let skippedDays = 0;
+  while (skippedDays < skipDays) {
+    endDate.setDate(endDate.getDate() - 1);
+    if (isWeekday(endDate)) {
+      skippedDays++;
+    }
+  }
+
+  // Calculate start date by going back 'days' number of trading days from end date
   let tradingDaysFound = 0;
-  const startDate = new Date();
+  const startDate = new Date(endDate);
 
   while (tradingDaysFound < days) {
     startDate.setDate(startDate.getDate() - 1);
@@ -245,16 +260,15 @@ export class UpstoxAPI {
   /**
    * Get daily candles for swing trading analysis
    */
-  async getDailyCandles(
+  async getLastTradingDaysData(
     instrumentKey: string,
-    fromDate: Date,
-    toDate: Date
+    days: number = Number(process.env.NEXT_PUBLIC_CANDLE_DAYS) ||
+      DEFAULT_CANDLE_DAYS,
+    skipDays: number = Number(process.env.NEXT_PUBLIC_SKIP_DAYS) ||
+      DEFAULT_SKIP_DAYS
   ): Promise<CandleData[]> {
     try {
-      // Format dates as YYYY-MM-DD
-      const from = fromDate.toISOString().split("T")[0];
-      const to = toDate.toISOString().split("T")[0];
-      const cacheKey = `${instrumentKey}:${from}:${to}`;
+      const cacheKey = `candles:${instrumentKey}:${days}:${skipDays}`;
 
       // Check cache first
       const cached = this.cache.get(cacheKey);
@@ -263,9 +277,18 @@ export class UpstoxAPI {
         return cached.data;
       }
 
-      const endpoint = `/historical-candle/${instrumentKey}/days/1/${to}/${from}`;
-      console.log(`[UpstoxAPI] Calling: ${endpoint}`);
+      // Get date range for the trading days
+      const { startDate, endDate } = getLastTradingDays(days, skipDays);
 
+      // Format dates for API
+      const fromDate = startDate.toISOString().split("T")[0];
+      const toDate = endDate.toISOString().split("T")[0];
+
+      console.log(
+        `[UpstoxAPI] Fetching ${days} days of candles for ${instrumentKey} from ${fromDate} to ${toDate} (skipping ${skipDays} days)`
+      );
+
+      const endpoint = `/historical-candle/${instrumentKey}/days/1/${toDate}/${fromDate}`;
       const response = await this.request<{
         status: string;
         data: { candles: RawCandleData[] };
@@ -273,9 +296,6 @@ export class UpstoxAPI {
 
       const candles = response.data.candles.map((candle) =>
         this.convertCandle(candle)
-      );
-      console.log(
-        `[UpstoxAPI] Returning ${candles.length} candles for ${instrumentKey}`
       );
 
       // Cache the result
@@ -286,19 +306,8 @@ export class UpstoxAPI {
 
       return candles;
     } catch (error) {
-      console.error("Failed to fetch daily candles:", error);
-      throw new Error("Failed to fetch daily candles");
+      console.error("Failed to fetch candle data:", error);
+      throw new Error("Failed to fetch candle data");
     }
-  }
-
-  /**
-   * Get last N trading days of data (for swing analysis)
-   */
-  async getLastTradingDaysData(
-    instrumentKey: string,
-    days: number = 30
-  ): Promise<CandleData[]> {
-    const { startDate, endDate } = getLastTradingDays(days);
-    return this.getDailyCandles(instrumentKey, startDate, endDate);
   }
 }

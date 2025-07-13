@@ -49,7 +49,7 @@ export const StockAutocomplete = React.forwardRef<
     onSelect,
     placeholder = "Search stocks by symbol or company name...",
     disabled = false,
-    className = "",
+    className = "border-2 border-gray-500 rounded-md",
     showCompanyName = true,
     limit = 8,
     exchange,

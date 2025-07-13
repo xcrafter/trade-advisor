@@ -5,6 +5,7 @@ import { OpenAIService } from "@/services/openai";
 import { type CandleData } from "@/types/upstox";
 import { type SwingTradingIndicators as SignalIndicators } from "@/types/signal";
 import { type AISignal as SignalAIResponse } from "@/types/signal";
+import { type StockAnalysis } from "@/controllers/StockController";
 
 export interface VolumeMetrics {
   volume_20day_avg: number;
@@ -1430,6 +1431,68 @@ export class TechnicalAnalysis {
       macd_signal_status: macdCrossover.signal,
       rising_volume: risingVolumeCheck.isRising,
       volume_trend: risingVolumeCheck.trend,
+    };
+  }
+
+  /**
+   * Analyze stock data and generate complete technical analysis
+   */
+  async analyze(
+    candles: CandleData[],
+    currentPrice: number
+  ): Promise<Partial<StockAnalysis>> {
+    // Calculate technical indicators
+    const indicators = await this.calculateSwingIndicators(candles);
+    const aiSignal = await this.getAISignal(indicators);
+
+    // Calculate support and resistance levels
+    const { support, resistance } = findSupportResistanceLevels(candles);
+
+    // Find nearest levels
+    const nearestSupport =
+      support.find((level: number) => level < currentPrice) || support[0];
+    const nearestResistance =
+      resistance.find((level: number) => level > currentPrice) || resistance[0];
+
+    // Calculate distance percentages
+    const supportDistancePercent =
+      ((currentPrice - nearestSupport) / currentPrice) * 100;
+    const resistanceDistancePercent =
+      ((nearestResistance - currentPrice) / currentPrice) * 100;
+
+    // Calculate price ranges and fibonacci levels
+    const priceRanges = calculatePriceRanges(candles);
+    const fibonacciLevels = calculateFibonacciLevels(candles);
+
+    return {
+      ...indicators,
+      ...aiSignal,
+      price_ranges: priceRanges,
+      support_levels: support,
+      resistance_levels: resistance,
+      nearest_support: nearestSupport,
+      nearest_resistance: nearestResistance,
+      support_distance_percent: supportDistancePercent,
+      resistance_distance_percent: resistanceDistancePercent,
+      fibonacci_levels: fibonacciLevels,
+      // Add missing properties from StockAnalysis interface
+      llm_opinion: aiSignal.opinion,
+      buy_price: aiSignal.buyPrice,
+      target_price_1: aiSignal.targetPrice1,
+      target_price_2: aiSignal.targetPrice2,
+      stop_loss: aiSignal.stopLoss,
+      holding_period: aiSignal.holdingPeriod,
+      position_size_percent: aiSignal.positionSizePercent,
+      risk_reward_ratio: aiSignal.riskRewardRatio,
+      trading_plan: aiSignal.tradingPlan,
+      key_catalysts: aiSignal.keyCatalysts,
+      risk_factors: aiSignal.riskFactors,
+
+      // Swing Trading Evaluation
+      swing_setup_quality: aiSignal.swingSetupQuality,
+      liquidity_check: aiSignal.liquidityCheck,
+      volatility_check: aiSignal.volatilityCheck,
+      market_trend_alignment: aiSignal.marketTrendAlignment,
     };
   }
 }

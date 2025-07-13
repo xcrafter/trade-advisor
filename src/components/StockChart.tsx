@@ -51,6 +51,46 @@ export function StockChart({
       setError(null);
 
       try {
+        // Check if this is sidebar data and not a forced refresh
+        if (instrumentKey.startsWith("SIDEBAR_DATA|") && !forceRefresh) {
+          const symbol = instrumentKey.split("|")[1];
+          // Get the cached analysis from the recent endpoint
+          const recentData = await authenticatedFetchJson<StockAnalysis[]>(
+            "/api/analyze/recent"
+          );
+          const existingAnalysis = recentData.find((a) => a.symbol === symbol);
+
+          if (existingAnalysis) {
+            setAnalysis(existingAnalysis);
+            // Update parent component with symbol if needed
+            if (onSymbolUpdate && existingAnalysis.symbol) {
+              onSymbolUpdate(existingAnalysis.symbol);
+            }
+            return;
+          }
+        }
+
+        // For forced refresh or if no cached data found, get the actual instrument key
+        let actualInstrumentKey = instrumentKey;
+        if (instrumentKey.startsWith("SIDEBAR_DATA|")) {
+          const symbol = instrumentKey.split("|")[1];
+          // Get the real instrument key for the symbol
+          const response = await fetch(
+            `/api/upstox/search?q=${symbol}&limit=1`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            if (data.results && data.results.length > 0) {
+              actualInstrumentKey = data.results[0].instrument_key;
+            } else {
+              throw new Error(`No instrument found for symbol: ${symbol}`);
+            }
+          } else {
+            throw new Error("Failed to fetch instrument data");
+          }
+        }
+
+        // Proceed with normal fetch using actual instrument key
         const params = new URLSearchParams();
         if (forceRefresh) {
           params.append("forceRefresh", "true");
@@ -58,7 +98,7 @@ export function StockChart({
 
         const data = await authenticatedFetchJson<StockAnalysis>(
           `/api/analyze?instrumentKey=${encodeURIComponent(
-            instrumentKey
+            actualInstrumentKey
           )}&${params.toString()}`
         );
         setAnalysis(data);
@@ -86,6 +126,7 @@ export function StockChart({
   }, [instrumentKey, fetchAnalysis]);
 
   const handleRefresh = () => {
+    // Always pass true to force a refresh
     fetchAnalysis(true);
   };
 

@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { useState, useCallback } from "react";
+import { StockData } from "@/components/RecentStocksSidebar";
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -65,19 +66,30 @@ export default function Home() {
   }, []);
 
   // Symbol selection (from sidebar) - needs to convert to instrument key
-  const handleSymbolSelect = useCallback(async (symbol: string) => {
+  const handleSymbolSelect = useCallback(async (stockData: StockData) => {
     try {
-      const response = await fetch(`/api/upstox/search?q=${symbol}&limit=1`);
+      // If we have the stock data from the sidebar, use it directly
+      if (stockData) {
+        setSelectedSymbol(stockData.symbol);
+        // Trigger the StockChart to use this data instead of fetching
+        setSelectedInstrumentKey(`SIDEBAR_DATA|${stockData.symbol}`);
+        return;
+      }
+
+      // Fallback to API call if somehow we don't have the data
+      const response = await fetch(
+        `/api/upstox/search?q=${stockData.symbol}&limit=1`
+      );
       if (response.ok) {
         const data = await response.json();
         if (data.results && data.results.length > 0) {
           const instrumentKey = data.results[0].instrument_key;
           setSelectedInstrumentKey(instrumentKey);
-          setSelectedSymbol(symbol);
+          setSelectedSymbol(stockData.symbol);
         } else {
-          console.error("No instrument found for symbol:", symbol);
+          console.error("No instrument found for symbol:", stockData.symbol);
           alert(
-            `Unable to find instrument data for ${symbol}. Please try searching for it again.`
+            `Unable to find instrument data for ${stockData.symbol}. Please try searching for it again.`
           );
           setSelectedInstrumentKey(null);
           setSelectedSymbol(null);
@@ -88,7 +100,7 @@ export default function Home() {
     } catch (error) {
       console.error("Error finding instrument key for symbol:", error);
       alert(
-        `Failed to load ${symbol}. Please check your connection and try again.`
+        `Failed to load ${stockData.symbol}. Please check your connection and try again.`
       );
       setSelectedInstrumentKey(null);
       setSelectedSymbol(null);
