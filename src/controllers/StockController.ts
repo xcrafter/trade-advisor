@@ -5,10 +5,12 @@ import {
 import { StockAnalysisModel } from "@/models/StockAnalysisModel";
 import { UpstoxAPI } from "@/lib/upstox";
 import { TechnicalAnalysis } from "@/lib/indicators";
+import { OpenAIService } from "@/services/openai";
 
 export interface StockAnalysis {
   // Basic Info
   symbol: string;
+  instrument_key: string;
   price: number;
   price_change: number;
   price_change_percent: number;
@@ -261,14 +263,15 @@ export class StockController {
     }
 
     // Perform technical analysis
-    const analysis = await this.technicalAnalysis.analyze(
+    const technicalAnalysisResult = await this.technicalAnalysis.analyze(
       candles,
       currentPrice
     );
 
-    // Create the full analysis object with default values for all required fields
-    const stockAnalysis: StockAnalysis = {
+    // Create the base analysis object with required fields
+    const baseAnalysis: StockAnalysis = {
       symbol: instrument.symbol,
+      instrument_key: instrumentKey,
       price: currentPrice,
       price_change: priceChange,
       price_change_percent: priceChangePercent,
@@ -358,10 +361,127 @@ export class StockController {
         day_10: { high: 0, low: 0 },
         day_30: { high: 0, low: 0 },
       },
-
-      // Override defaults with actual analysis
-      ...analysis,
     };
+
+    // Get AI signal
+    const openAIService = new OpenAIService();
+    const aiSignal = await openAIService.getAISignal({
+      symbol: instrument.symbol,
+      timestamp: new Date().toISOString(),
+      price: currentPrice,
+      sma_50: technicalAnalysisResult.sma_50 || 0,
+      sma_200: technicalAnalysisResult.sma_200 || 0,
+      ema_21: technicalAnalysisResult.ema_21 || 0,
+      ema_50: technicalAnalysisResult.ema_50 || 0,
+      trend_direction: technicalAnalysisResult.trend_direction || "sideways",
+      trend_strength: technicalAnalysisResult.trend_strength || "weak",
+      golden_cross: technicalAnalysisResult.golden_cross || false,
+      death_cross: technicalAnalysisResult.death_cross || false,
+      rsi_14: technicalAnalysisResult.rsi_14 || 0,
+      rsi_21: technicalAnalysisResult.rsi_21 || 0,
+      rsi_signal: technicalAnalysisResult.rsi_signal || "neutral",
+      macd_line: technicalAnalysisResult.macd_line || 0,
+      macd_signal: technicalAnalysisResult.macd_signal || 0,
+      macd_histogram: technicalAnalysisResult.macd_histogram || 0,
+      macd_bullish_crossover:
+        technicalAnalysisResult.macd_bullish_crossover || false,
+      stochastic: technicalAnalysisResult.stochastic || 0,
+      stochastic_signal: technicalAnalysisResult.stochastic_signal || "neutral",
+      volume_20day_avg: technicalAnalysisResult.volume_20day_avg || 0,
+      volume_current: technicalAnalysisResult.volume_current || 0,
+      volume_vs_20day_avg: technicalAnalysisResult.volume_vs_20day_avg || 0,
+      volume_trend_20day:
+        technicalAnalysisResult.volume_trend_20day || "stable",
+      volume_breakout: technicalAnalysisResult.volume_breakout || false,
+      accumulation_distribution:
+        technicalAnalysisResult.accumulation_distribution || 0,
+      volume_quality: technicalAnalysisResult.volume_quality || "poor",
+      atr_21: technicalAnalysisResult.atr_21 || 0,
+      suggested_stop_loss:
+        technicalAnalysisResult.stop_loss || currentPrice * 0.985,
+      suggested_take_profit:
+        technicalAnalysisResult.target_price_2 || currentPrice * 1.04,
+      bollinger_upper: technicalAnalysisResult.bollinger_upper || 0,
+      bollinger_lower: technicalAnalysisResult.bollinger_lower || 0,
+      bollinger_position:
+        technicalAnalysisResult.bollinger_position || "middle",
+      volatility_percentile: technicalAnalysisResult.volatility_percentile || 0,
+      volatility_rating: technicalAnalysisResult.volatility_rating || "low",
+      support_levels: technicalAnalysisResult.support_levels || [],
+      resistance_levels: technicalAnalysisResult.resistance_levels || [],
+      nearest_support: technicalAnalysisResult.nearest_support || 0,
+      nearest_resistance: technicalAnalysisResult.nearest_resistance || 0,
+      support_distance_percent:
+        technicalAnalysisResult.support_distance_percent || 0,
+      resistance_distance_percent:
+        technicalAnalysisResult.resistance_distance_percent || 0,
+      weekly_pivot: technicalAnalysisResult.weekly_pivot || 0,
+      fibonacci_levels: technicalAnalysisResult.fibonacci_levels || [],
+      market_regime: technicalAnalysisResult.market_regime || "sideways",
+      sector_performance: technicalAnalysisResult.sector_performance || 0,
+      relative_strength: technicalAnalysisResult.relative_strength || 0,
+      sector_correlation: technicalAnalysisResult.sector_correlation || 0,
+      swing_score: technicalAnalysisResult.swing_score || 0,
+      swing_setup_quality:
+        technicalAnalysisResult.swing_setup_quality || "poor",
+      breakout_pattern: technicalAnalysisResult.breakout_pattern || "none",
+      breakout_confidence: technicalAnalysisResult.breakout_confidence || "low",
+      atr_validation: technicalAnalysisResult.atr_validation || false,
+      atr_percent: technicalAnalysisResult.atr_percent || 0,
+      price_range_valid: technicalAnalysisResult.price_range_valid || false,
+      price_range: technicalAnalysisResult.price_range || "",
+      pullback_to_support: technicalAnalysisResult.pullback_to_support || false,
+      support_distance: technicalAnalysisResult.support_distance || 0,
+      volume_breakout_detected:
+        technicalAnalysisResult.volume_breakout_detected || false,
+      volume_multiple: technicalAnalysisResult.volume_multiple || 0,
+      rsi_bounce_zone: technicalAnalysisResult.rsi_bounce_zone || false,
+      rsi_zone: technicalAnalysisResult.rsi_zone || "",
+      macd_bullish_crossover_detected:
+        technicalAnalysisResult.macd_bullish_crossover_detected || false,
+      macd_signal_status: technicalAnalysisResult.macd_signal_status || "",
+      rising_volume: technicalAnalysisResult.rising_volume || false,
+      volume_trend: technicalAnalysisResult.volume_trend || "",
+    });
+
+    // Merge technical analysis results while preserving required fields
+    const stockAnalysis: StockAnalysis = {
+      ...baseAnalysis,
+      ...technicalAnalysisResult,
+      // Add AI signal data
+      signal: aiSignal.signal,
+      direction: aiSignal.direction,
+      confidence_level: aiSignal.confidence_level,
+      llm_opinion: aiSignal.opinion,
+      buy_price: aiSignal.buy_price,
+      target_price_1: aiSignal.target_price_1,
+      target_price_2: aiSignal.target_price_2,
+      stop_loss: aiSignal.stop_loss,
+      holding_period: aiSignal.holding_period,
+      position_size_percent: aiSignal.position_size_percent,
+      risk_reward_ratio: aiSignal.risk_reward_ratio,
+      trading_plan: aiSignal.trading_plan,
+      key_catalysts: aiSignal.key_catalysts,
+      risk_factors: aiSignal.risk_factors,
+      swing_setup_quality: aiSignal.swing_setup_quality,
+      liquidity_check: aiSignal.liquidity_check,
+      volatility_check: aiSignal.volatility_check,
+      market_trend_alignment: aiSignal.market_trend_alignment,
+      // Ensure critical fields are not overwritten
+      symbol: instrument.symbol,
+      instrument_key: instrumentKey,
+      price: currentPrice,
+      price_change: priceChange,
+      price_change_percent: priceChangePercent,
+      candles: candles,
+      last_updated_at: new Date().toISOString(),
+    };
+
+    // Validate the final analysis object
+    if (!stockAnalysis.symbol || stockAnalysis.symbol.trim() === "") {
+      console.error("Invalid analysis after merge:", stockAnalysis);
+      throw new Error("Critical error: Symbol was lost during analysis merge");
+    }
 
     // Save the analysis
     await StockAnalysisModel.upsert(stockAnalysis, instrumentKey, userId);

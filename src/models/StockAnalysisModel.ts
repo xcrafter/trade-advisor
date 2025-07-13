@@ -13,6 +13,34 @@ export class StockAnalysisModel {
     const supabase = SupabaseService.getInstance().getAdminClient();
 
     try {
+      // Validate symbol
+      if (!analysis.symbol || analysis.symbol.trim() === "") {
+        throw new Error("Invalid analysis: symbol cannot be empty");
+      }
+
+      // Get the instrument to ensure we have the correct symbol
+      const { data: instrument, error: instrumentError } = await supabase
+        .from("instruments")
+        .select("symbol")
+        .eq("instrument_key", instrumentKey)
+        .single();
+
+      if (instrumentError || !instrument) {
+        console.error("Error fetching instrument:", instrumentError);
+        throw new Error("Failed to validate instrument symbol");
+      }
+
+      // Ensure the symbol matches the instrument
+      if (instrument.symbol !== analysis.symbol) {
+        console.warn(
+          `Symbol mismatch: analysis=${analysis.symbol}, instrument=${instrument.symbol}. Using instrument symbol.`
+        );
+        analysis.symbol = instrument.symbol;
+      }
+
+      // Ensure instrument_key is set
+      analysis.instrument_key = instrumentKey;
+
       // Check for existing analysis for this user
       const { data: userAnalysis, error: selectError } = await supabase
         .from("stock_analysis")

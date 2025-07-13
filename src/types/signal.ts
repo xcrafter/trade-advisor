@@ -110,26 +110,26 @@ export interface AISignal {
   confidence_level: "very_high" | "high" | "moderate" | "low";
   opinion: string;
   direction: "LONG" | "SHORT" | "NEUTRAL";
-  buyPrice: number;
-  targetPrice1: number;
-  targetPrice2: number;
-  stopLoss: number;
-  holdingPeriod:
+  buy_price: number;
+  target_price_1: number;
+  target_price_2: number;
+  stop_loss: number;
+  holding_period:
     | "1-2_weeks"
     | "2-4_weeks"
     | "1-2_months"
     | "2-3_months"
     | "long_term";
-  positionSizePercent: number;
-  riskRewardRatio: string;
-  tradingPlan: string;
-  swingScore: number;
-  keyCatalysts: string;
-  riskFactors: string;
-  swingSetupQuality: "excellent" | "good" | "fair" | "poor";
-  liquidityCheck: "high" | "moderate" | "low";
-  volatilityCheck: "optimal" | "adequate" | "insufficient";
-  marketTrendAlignment: "strong" | "moderate" | "weak" | "against_trend";
+  position_size_percent: number;
+  risk_reward_ratio: string;
+  trading_plan: string;
+  swing_score: number;
+  key_catalysts: string;
+  risk_factors: string;
+  swing_setup_quality: "excellent" | "good" | "fair" | "poor";
+  liquidity_check: "high" | "moderate" | "low";
+  volatility_check: "optimal" | "adequate" | "insufficient";
+  market_trend_alignment: "strong" | "moderate" | "weak" | "against_trend";
 }
 
 export interface Signal {

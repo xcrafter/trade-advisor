@@ -816,12 +816,13 @@ export function detectBreakoutPattern(candles: CandleData[]): {
 } {
   if (candles.length < 30) return { pattern: "none", confidence: "low" };
 
-  const recent = candles.slice(-30);
+  // Take first 30 candles since array is already reversed
+  const recent = candles.slice(0, 30);
   const prices = recent.map((c) => c.close);
   const highs = recent.map((c) => c.high);
   const lows = recent.map((c) => c.low);
   const volumes = recent.map((c) => c.volume);
-  const currentPrice = prices[prices.length - 1];
+  const currentPrice = prices[0]; // Use first price since array is reversed
 
   // Flag pattern: Strong move followed by consolidation
   const flagLookback = 15;
@@ -1195,6 +1196,7 @@ export class TechnicalAnalysis {
       throw new Error("Insufficient data for analysis");
     }
 
+    candles = [...candles].reverse();
     const prices = candles.map((c) => c.close);
     const volumes = candles.map((c) => c.volume);
     const currentPrice = prices[prices.length - 1];
