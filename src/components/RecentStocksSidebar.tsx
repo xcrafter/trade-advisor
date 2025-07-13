@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Search, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { authenticatedFetchJson } from "@/lib/api-client";
 
 interface StockData {
   symbol: string;
@@ -15,32 +16,59 @@ interface StockData {
 
 interface RecentStocksSidebarProps {
   onStockSelect: (symbol: string) => void;
+  refreshTrigger?: number; // Add this prop
 }
 
 export function RecentStocksSidebar({
   onStockSelect,
+  refreshTrigger = 0,
 }: RecentStocksSidebarProps) {
   const [recentStocks, setRecentStocks] = useState<StockData[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchRecentStocks();
-  }, []);
+    let mounted = true;
 
-  const fetchRecentStocks = async () => {
-    try {
-      const response = await fetch("/api/analyze/recent");
-      if (response.ok) {
-        const data = await response.json();
-        setRecentStocks(data || []);
+    const fetchRecentStocks = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const data = await authenticatedFetchJson<StockData[]>(
+          "/api/analyze/recent"
+        );
+
+        // Only update state if component is still mounted
+        if (mounted) {
+          setRecentStocks(data || []);
+          setError(null);
+        }
+      } catch (error) {
+        console.error("Error fetching recent stocks:", error);
+        if (mounted) {
+          setError(
+            error instanceof Error
+              ? error.message
+              : "Failed to fetch recent stocks"
+          );
+          setRecentStocks([]); // Clear stocks on error
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
       }
-    } catch (error) {
-      console.error("Error fetching recent stocks:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+
+    fetchRecentStocks();
+
+    // Cleanup function to prevent state updates after unmount
+    return () => {
+      mounted = false;
+    };
+  }, [refreshTrigger]); // Add refreshTrigger to dependency array
 
   const filteredStocks = recentStocks.filter((stock) =>
     stock.symbol.toLowerCase().includes(searchTerm.toLowerCase())
@@ -112,6 +140,8 @@ export function RecentStocksSidebar({
           <div className="flex items-center justify-center p-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
+        ) : error ? (
+          <div className="p-4 text-center text-red-500">{error}</div>
         ) : filteredStocks.length === 0 ? (
           <div className="p-4 text-center text-gray-500">
             {searchTerm ? "No stocks found" : "No recent analysis"}

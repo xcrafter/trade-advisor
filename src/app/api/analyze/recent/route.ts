@@ -5,9 +5,33 @@ import {
   TechnicalAnalysis,
   DEFAULT_INDIAN_MARKET_CONFIG,
 } from "@/lib/indicators";
+import { SupabaseService } from "@/lib/supabase";
 
 export async function GET(request: NextRequest) {
   try {
+    // Get user from auth header
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const supabase = SupabaseService.getInstance().getAdminClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Invalid authentication" },
+        { status: 401 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get("limit") || "10");
 
@@ -19,7 +43,10 @@ export async function GET(request: NextRequest) {
     );
     const stockController = new StockController(upstoxApi, technicalAnalysis);
 
-    const recentAnalyses = await stockController.getRecentAnalysis(limit);
+    const recentAnalyses = await stockController.getRecentAnalysis(
+      user.id,
+      limit
+    );
 
     return NextResponse.json(recentAnalyses);
   } catch (error) {

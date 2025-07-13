@@ -5,9 +5,44 @@ import {
   TechnicalAnalysis,
   DEFAULT_INDIAN_MARKET_CONFIG,
 } from "@/lib/indicators";
+import { createClient } from "@supabase/supabase-js";
+
+// Initialize Supabase client for auth with service role key
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+);
 
 export async function GET(request: NextRequest) {
   try {
+    // Get user from auth header
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Invalid authentication" },
+        { status: 401 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const query = searchParams.get("q") || "";
     const limit = parseInt(searchParams.get("limit") || "10");
@@ -29,6 +64,7 @@ export async function GET(request: NextRequest) {
 
     const searchResults = await stockController.searchAnalyzedStocks(
       query,
+      user.id,
       limit
     );
 

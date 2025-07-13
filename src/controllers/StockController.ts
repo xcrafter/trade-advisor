@@ -183,12 +183,17 @@ export class StockController {
   }
 
   /**
-   * Analyze a stock for trading opportunities
+   * Analyze a stock for trading opportunities for a specific user
    */
   async analyzeStock(
     instrumentKey: string,
+    userId: string,
     forceRefresh: boolean = false
   ): Promise<StockAnalysis> {
+    if (!userId) {
+      throw new Error("User ID is required for stock analysis");
+    }
+
     // First get instrument details
     const instrument = await InstrumentModel.findByInstrumentKey(instrumentKey);
     if (!instrument) {
@@ -198,9 +203,20 @@ export class StockController {
     // Check if we have recent analysis and don't need to refresh
     if (!forceRefresh) {
       try {
-        const cachedAnalysis = await StockAnalysisModel.getBySymbol(
-          instrument.symbol
+        // First try to find by instrument key (more precise)
+        let cachedAnalysis = await StockAnalysisModel.getByInstrumentKey(
+          instrumentKey,
+          userId
         );
+
+        // If not found, try by symbol (fallback)
+        if (!cachedAnalysis) {
+          cachedAnalysis = await StockAnalysisModel.getBySymbol(
+            instrument.symbol,
+            userId
+          );
+        }
+
         if (cachedAnalysis) {
           const lastUpdated = new Date(cachedAnalysis.last_updated_at);
           const now = new Date();
@@ -228,12 +244,13 @@ export class StockController {
     }
 
     // Then find or create stock record
-    let stock = await StockModel.findByInstrumentKey(instrumentKey);
+    let stock = await StockModel.findByInstrumentKey(instrumentKey, userId);
     if (!stock) {
       stock = await StockModel.upsert({
         symbol: instrument.symbol,
         exchange: instrument.exchange,
         instrument_key: instrumentKey,
+        user_id: userId,
       });
     }
 
@@ -394,7 +411,7 @@ export class StockController {
 
     // Save analysis to database (with error handling)
     try {
-      await StockAnalysisModel.upsert(analysis, instrumentKey);
+      await StockAnalysisModel.upsert(analysis, instrumentKey, userId);
     } catch (error) {
       console.error("Failed to save analysis to database:", error);
       // Continue without saving to database
@@ -404,19 +421,23 @@ export class StockController {
   }
 
   /**
-   * Get recently analyzed stocks
+   * Get recently analyzed stocks for a specific user
    */
-  async getRecentAnalysis(limit: number = 10): Promise<StockAnalysis[]> {
-    return StockAnalysisModel.getRecent(limit);
+  async getRecentAnalysis(
+    userId: string,
+    limit: number = 10
+  ): Promise<StockAnalysis[]> {
+    return StockAnalysisModel.getRecent(userId, limit);
   }
 
   /**
-   * Search analyzed stocks
+   * Search analyzed stocks for a specific user
    */
   async searchAnalyzedStocks(
     query: string,
+    userId: string,
     limit: number = 10
   ): Promise<StockAnalysis[]> {
-    return StockAnalysisModel.search(query, limit);
+    return StockAnalysisModel.search(query, userId, limit);
   }
 }

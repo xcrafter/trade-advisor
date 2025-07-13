@@ -3,6 +3,7 @@ import { StockController } from "@/controllers/StockController";
 import { StockAnalysisModel } from "@/models/StockAnalysisModel";
 import { UpstoxAPI } from "@/lib/upstox";
 import { TechnicalAnalysis } from "@/lib/indicators";
+import { createClient } from "@supabase/supabase-js";
 
 const upstoxApi = UpstoxAPI.getInstance({
   apiKey: process.env.UPSTOX_API_KEY!,
@@ -11,8 +12,42 @@ const upstoxApi = UpstoxAPI.getInstance({
 const technicalAnalysis = new TechnicalAnalysis();
 const stockController = new StockController(upstoxApi, technicalAnalysis);
 
+// Initialize Supabase client for auth
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+);
+
 export async function GET(request: NextRequest) {
   try {
+    // Get user from auth header
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Invalid authentication" },
+        { status: 401 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const instrumentKey = searchParams.get("instrumentKey");
     const forceRefresh = searchParams.get("forceRefresh") === "true";
@@ -25,12 +60,13 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(
-      `[API] Analyze request for ${instrumentKey}, forceRefresh: ${forceRefresh}`
+      `[API] Analyze request for ${instrumentKey}, user: ${user.id}, forceRefresh: ${forceRefresh}`
     );
     console.log(`[API] Starting analysis for ${instrumentKey}`);
 
     const analysis = await stockController.analyzeStock(
       instrumentKey,
+      user.id,
       forceRefresh
     );
 
@@ -45,6 +81,28 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    // Get user from auth header
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Invalid authentication" },
+        { status: 401 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const symbol = searchParams.get("symbol");
 
@@ -55,9 +113,9 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    console.log(`[API] Delete request for ${symbol}`);
+    console.log(`[API] Delete request for ${symbol}, user: ${user.id}`);
 
-    await StockAnalysisModel.deleteBySymbol(symbol);
+    await StockAnalysisModel.deleteBySymbol(symbol, user.id);
 
     console.log(`[API] Successfully deleted analysis for ${symbol}`);
     return NextResponse.json({

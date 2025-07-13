@@ -26,6 +26,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
+import { authenticatedFetchJson, authenticatedFetch } from "@/lib/api-client";
 
 interface StockChartProps {
   instrumentKey: string;
@@ -55,18 +56,11 @@ export function StockChart({
           params.append("forceRefresh", "true");
         }
 
-        const response = await fetch(
+        const data = await authenticatedFetchJson<StockAnalysis>(
           `/api/analyze?instrumentKey=${encodeURIComponent(
             instrumentKey
           )}&${params.toString()}`
         );
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || "Failed to fetch analysis");
-        }
-
-        const data = await response.json();
         setAnalysis(data);
 
         // Update parent component with symbol if needed
@@ -104,26 +98,20 @@ export function StockChart({
       )
     ) {
       try {
-        const response = await fetch(
+        await authenticatedFetch(
           `/api/analyze?symbol=${encodeURIComponent(analysis.symbol)}`,
           { method: "DELETE" }
         );
 
-        if (response.ok) {
-          console.log(`Successfully deleted analysis for ${analysis.symbol}`);
+        console.log(`Successfully deleted analysis for ${analysis.symbol}`);
 
-          // Notify parent component
-          if (onDelete) {
-            onDelete(analysis.symbol);
-          }
-
-          // Clear the current analysis
-          setAnalysis(null);
-        } else {
-          const error = await response.json();
-          console.error("Failed to delete analysis:", error);
-          alert("Failed to delete analysis. Please try again.");
+        // Notify parent component
+        if (onDelete) {
+          onDelete(analysis.symbol);
         }
+
+        // Clear the current analysis
+        setAnalysis(null);
       } catch (error) {
         console.error("Error deleting analysis:", error);
         alert("Failed to delete analysis. Please try again.");

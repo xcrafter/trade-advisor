@@ -3,31 +3,30 @@ import { StockAnalysis } from "@/controllers/StockController";
 
 export class StockAnalysisModel {
   /**
-   * Save or update stock analysis in database
+   * Save or update stock analysis in database for a specific user
    */
   static async upsert(
     analysis: StockAnalysis,
-    instrumentKey: string
+    instrumentKey: string,
+    userId: string
   ): Promise<void> {
-    const supabase = SupabaseService.getInstance().getClient();
+    const supabase = SupabaseService.getInstance().getAdminClient();
 
     try {
-      // Store the entire analysis as JSON - much simpler!
-      // First try to update, if not found then insert
-      const { data: existingData, error: selectError } = await supabase
+      // Check for existing analysis for this user
+      const { data: userAnalysis, error: selectError } = await supabase
         .from("stock_analysis")
         .select("id")
         .eq("instrument_key", instrumentKey)
+        .eq("user_id", userId)
         .single();
 
       if (selectError && selectError.code !== "PGRST116") {
-        // PGRST116 means "no rows returned" which is expected for new records
         console.error("Error checking existing record:", selectError);
         throw new Error(`Database query failed: ${selectError.message}`);
       }
 
-      let error;
-      if (existingData) {
+      if (userAnalysis) {
         // Update existing record
         const { error: updateError } = await supabase
           .from("stock_analysis")
@@ -36,8 +35,13 @@ export class StockAnalysisModel {
             analysis_data: analysis,
             last_updated_at: new Date().toISOString(),
           })
-          .eq("instrument_key", instrumentKey);
-        error = updateError;
+          .eq("id", userAnalysis.id)
+          .eq("user_id", userId);
+
+        if (updateError) {
+          console.error("Error updating analysis:", updateError);
+          throw new Error(`Failed to update analysis: ${updateError.message}`);
+        }
       } else {
         // Insert new record
         const { error: insertError } = await supabase
@@ -46,14 +50,14 @@ export class StockAnalysisModel {
             instrument_key: instrumentKey,
             symbol: analysis.symbol,
             analysis_data: analysis,
+            user_id: userId,
             last_updated_at: new Date().toISOString(),
           });
-        error = insertError;
-      }
 
-      if (error) {
-        console.error("Error saving stock analysis:", error);
-        throw new Error(`Failed to save stock analysis: ${error.message}`);
+        if (insertError) {
+          console.error("Error creating analysis:", insertError);
+          throw new Error(`Failed to create analysis: ${insertError.message}`);
+        }
       }
 
       console.log(`Successfully saved analysis for ${analysis.symbol}`);
@@ -64,15 +68,19 @@ export class StockAnalysisModel {
   }
 
   /**
-   * Get stock analysis by symbol
+   * Get stock analysis by symbol for a specific user
    */
-  static async getBySymbol(symbol: string): Promise<StockAnalysis | null> {
+  static async getBySymbol(
+    symbol: string,
+    userId: string
+  ): Promise<StockAnalysis | null> {
     try {
-      const supabase = SupabaseService.getInstance().getClient();
+      const supabase = SupabaseService.getInstance().getAdminClient();
       const { data, error } = await supabase
         .from("stock_analysis")
         .select("*")
         .eq("symbol", symbol)
+        .eq("user_id", userId)
         .single();
 
       if (error) {
@@ -91,14 +99,49 @@ export class StockAnalysisModel {
   }
 
   /**
-   * Get recent stock analyses
+   * Get stock analysis by instrument key for a specific user
    */
-  static async getRecent(limit: number = 10): Promise<StockAnalysis[]> {
+  static async getByInstrumentKey(
+    instrumentKey: string,
+    userId: string
+  ): Promise<StockAnalysis | null> {
     try {
-      const supabase = SupabaseService.getInstance().getClient();
+      const supabase = SupabaseService.getInstance().getAdminClient();
       const { data, error } = await supabase
         .from("stock_analysis")
         .select("*")
+        .eq("instrument_key", instrumentKey)
+        .eq("user_id", userId)
+        .single();
+
+      if (error) {
+        if (error.code === "PGRST116") {
+          return null; // No data found
+        }
+        console.error("Error fetching stock analysis:", error);
+        throw new Error(`Failed to fetch stock analysis: ${error.message}`);
+      }
+
+      return data.analysis_data as StockAnalysis;
+    } catch (error) {
+      console.error("Database query failed:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get recent stock analyses for a specific user
+   */
+  static async getRecent(
+    userId: string,
+    limit: number = 10
+  ): Promise<StockAnalysis[]> {
+    try {
+      const supabase = SupabaseService.getInstance().getAdminClient();
+      const { data, error } = await supabase
+        .from("stock_analysis")
+        .select("*")
+        .eq("user_id", userId)
         .order("last_updated_at", { ascending: false })
         .limit(limit);
 
@@ -115,17 +158,19 @@ export class StockAnalysisModel {
   }
 
   /**
-   * Search stock analyses by symbol
+   * Search stock analyses by symbol for a specific user
    */
   static async search(
     query: string,
+    userId: string,
     limit: number = 10
   ): Promise<StockAnalysis[]> {
     try {
-      const supabase = SupabaseService.getInstance().getClient();
+      const supabase = SupabaseService.getInstance().getAdminClient();
       const { data, error } = await supabase
         .from("stock_analysis")
         .select("*")
+        .eq("user_id", userId)
         .ilike("symbol", `%${query}%`)
         .order("last_updated_at", { ascending: false })
         .limit(limit);
@@ -143,15 +188,16 @@ export class StockAnalysisModel {
   }
 
   /**
-   * Delete stock analysis by symbol
+   * Delete stock analysis by symbol for a specific user
    */
-  static async deleteBySymbol(symbol: string): Promise<void> {
+  static async deleteBySymbol(symbol: string, userId: string): Promise<void> {
     try {
-      const supabase = SupabaseService.getInstance().getClient();
+      const supabase = SupabaseService.getInstance().getAdminClient();
       const { error } = await supabase
         .from("stock_analysis")
         .delete()
-        .eq("symbol", symbol);
+        .eq("symbol", symbol)
+        .eq("user_id", userId);
 
       if (error) {
         console.error("Error deleting stock analysis:", error);

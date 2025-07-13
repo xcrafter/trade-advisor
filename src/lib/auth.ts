@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { User, Session } from "@supabase/supabase-js";
+import { SupabaseService } from "./supabase";
+import { UpstoxAPI } from "./upstox";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -85,6 +87,11 @@ export class AuthService {
       if (error) {
         throw error;
       }
+
+      // Clear all singleton instances and caches
+      SupabaseService.clearInstance();
+      UpstoxAPI.clearInstance();
+
       return { success: true };
     } catch (error) {
       console.error("Sign out error:", error);

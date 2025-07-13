@@ -8,19 +8,20 @@ export interface StockCreate {
   symbol: string;
   exchange: string;
   instrument_key: string;
+  user_id: string;
 }
 
 export class StockModel {
-  private static supabase = SupabaseService.getInstance().getClient();
+  private static supabase = SupabaseService.getInstance().getAdminClient();
 
   /**
-   * Create or update a stock record
+   * Create or update a stock record for a specific user
    */
   static async upsert(data: StockCreate): Promise<Stock> {
     const { data: stock, error } = await this.supabase
       .from("stocks")
       .upsert([data], {
-        onConflict: "instrument_key",
+        onConflict: "user_id,instrument_key",
         ignoreDuplicates: false,
       })
       .select()
@@ -34,17 +35,19 @@ export class StockModel {
   }
 
   /**
-   * Find a stock by symbol and exchange
+   * Find a stock by symbol and exchange for a specific user
    */
   static async findBySymbolAndExchange(
     symbol: string,
-    exchange: string
+    exchange: string,
+    userId: string
   ): Promise<Stock | null> {
     const { data, error } = await this.supabase
       .from("stocks")
       .select("*")
       .eq("symbol", symbol.toUpperCase())
       .eq("exchange", exchange)
+      .eq("user_id", userId)
       .single();
 
     if (error && !isNotFoundError(error)) {
@@ -55,15 +58,17 @@ export class StockModel {
   }
 
   /**
-   * Find a stock by instrument key
+   * Find a stock by instrument key for a specific user
    */
   static async findByInstrumentKey(
-    instrumentKey: string
+    instrumentKey: string,
+    userId: string
   ): Promise<Stock | null> {
     const { data, error } = await this.supabase
       .from("stocks")
       .select("*")
       .eq("instrument_key", instrumentKey)
+      .eq("user_id", userId)
       .single();
 
     if (error && !isNotFoundError(error)) {
@@ -74,18 +79,37 @@ export class StockModel {
   }
 
   /**
-   * Find stocks by session ID
+   * Find all stocks for a specific user
    */
-  static async findBySessionId(sessionId: string): Promise<Stock[]> {
+  static async findByUserId(userId: string): Promise<Stock[]> {
     const { data, error } = await this.supabase
       .from("stocks")
       .select("*")
-      .eq("session_id", sessionId);
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
 
     if (error) {
-      handleDatabaseError(error, "StockModel.findBySessionId");
+      handleDatabaseError(error, "StockModel.findByUserId");
     }
 
     return data || [];
+  }
+
+  /**
+   * Delete a stock for a specific user
+   */
+  static async deleteByInstrumentKey(
+    instrumentKey: string,
+    userId: string
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from("stocks")
+      .delete()
+      .eq("instrument_key", instrumentKey)
+      .eq("user_id", userId);
+
+    if (error) {
+      handleDatabaseError(error, "StockModel.deleteByInstrumentKey");
+    }
   }
 }

@@ -47,7 +47,7 @@ interface QuoteCacheEntry {
 }
 
 export class UpstoxAPI {
-  private static instance: UpstoxAPI | null = null;
+  private static instance: UpstoxAPI | undefined = undefined;
   private apiKey: string;
   private pendingRequests: Map<string, Promise<unknown>> = new Map();
   private cache: Map<string, CacheEntry> = new Map();
@@ -78,10 +78,16 @@ export class UpstoxAPI {
   }
 
   /**
-   * Reset singleton instance (useful for testing)
+   * Clear the singleton instance and all caches
    */
-  public static resetInstance(): void {
-    UpstoxAPI.instance = null;
+  public static clearInstance(): void {
+    if (UpstoxAPI.instance) {
+      UpstoxAPI.instance.cache.clear();
+      UpstoxAPI.instance.quoteCache.clear();
+      UpstoxAPI.instance.pendingRequests.clear();
+    }
+    UpstoxAPI.instance = undefined;
+    console.log("[UpstoxAPI] Cleared instance and caches");
   }
 
   /**

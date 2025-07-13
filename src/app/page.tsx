@@ -15,6 +15,7 @@ export default function Home() {
   const [selectedInstrumentKey, setSelectedInstrumentKey] = useState<
     string | null
   >(null);
+  const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0);
 
   // Direct instrument key selection (from autocomplete)
   const handleStockSelect = useCallback(async (instrumentKey: string) => {
@@ -106,6 +107,12 @@ export default function Home() {
     [selectedSymbol]
   );
 
+  // Handle successful analysis
+  const handleAnalysisComplete = useCallback((symbol: string) => {
+    setSelectedSymbol(symbol);
+    setSidebarRefreshTrigger((prev) => prev + 1); // Trigger sidebar refresh
+  }, []);
+
   // Show loading screen while checking authentication
   if (loading) {
     return (
@@ -143,7 +150,10 @@ export default function Home() {
       <Navbar />
 
       <main className="flex h-[calc(100vh-64px)]">
-        <RecentStocksSidebar onStockSelect={handleSymbolSelect} />
+        <RecentStocksSidebar
+          onStockSelect={handleSymbolSelect}
+          refreshTrigger={sidebarRefreshTrigger}
+        />
 
         <div className="flex-1 flex flex-col">
           <div className="p-4 bg-white border-b">
@@ -155,7 +165,7 @@ export default function Home() {
               <div className="p-4">
                 <StockChart
                   instrumentKey={selectedInstrumentKey}
-                  onSymbolUpdate={setSelectedSymbol}
+                  onSymbolUpdate={handleAnalysisComplete}
                   onDelete={handleDeleteStock}
                 />
               </div>
