@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Search, TrendingUp, TrendingDown, Minus, Trash2 } from "lucide-react";
+import { Search, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,19 +89,6 @@ export function RecentStocksSidebar({
   const filteredStocks = recentStocks.filter((stock) =>
     stock.symbol.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  const getSignalIcon = (signal: string) => {
-    switch (signal?.toLowerCase()) {
-      case "buy":
-      case "strong_buy":
-        return <TrendingUp className="w-4 h-4 text-green-600" />;
-      case "sell":
-      case "strong_sell":
-        return <TrendingDown className="w-4 h-4 text-red-600" />;
-      default:
-        return <Minus className="w-4 h-4 text-gray-600" />;
-    }
-  };
 
   const getSignalColor = (signal: string) => {
     switch (signal?.toLowerCase()) {

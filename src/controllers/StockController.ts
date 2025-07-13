@@ -193,6 +193,11 @@ export class StockController {
       throw new Error("Instrument not found");
     }
 
+    // Validate symbol
+    if (!instrument.symbol || instrument.symbol.trim() === "") {
+      throw new Error("Invalid instrument: symbol cannot be empty");
+    }
+
     // Check if we have recent analysis and don't need to refresh
     if (!forceRefresh) {
       try {
