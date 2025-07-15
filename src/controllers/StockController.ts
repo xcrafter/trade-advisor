@@ -452,7 +452,7 @@ export class StockController {
       signal: aiSignal.signal,
       direction: aiSignal.direction,
       confidence_level: aiSignal.confidence_level,
-      llm_opinion: aiSignal.opinion,
+      llm_opinion: aiSignal.llm_opinion,
       buy_price: aiSignal.buy_price,
       target_price_1: aiSignal.target_price_1,
       target_price_2: aiSignal.target_price_2,

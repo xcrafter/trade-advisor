@@ -257,10 +257,10 @@ Return your analysis in the following JSON format:
 
       // Transform AI response into our AISignal format
       return {
-        signal: aiResponse.signal,
-        confidence_level: aiResponse.confidence_level,
-        opinion: aiResponse.analysis || "",
-        direction: aiResponse.direction,
+        signal: aiResponse.signal || "neutral",
+        direction: aiResponse.direction || "NEUTRAL",
+        confidence_level: aiResponse.confidence_level || "low",
+        llm_opinion: aiResponse.analysis || "",
         buy_price: buyPrice,
         target_price_1: targetPrice1,
         target_price_2: targetPrice2,

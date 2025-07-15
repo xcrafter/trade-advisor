@@ -80,13 +80,6 @@ export interface SwingTradingIndicators {
   volatility_rating: "very_high" | "high" | "moderate" | "low" | "very_low";
 }
 
-export interface AISignal {
-  signal: "strong_buy" | "buy" | "hold" | "sell" | "strong_sell" | "neutral";
-  direction: "LONG" | "SHORT" | "NEUTRAL";
-  confidence_level: "very_high" | "high" | "moderate" | "low";
-  llm_opinion: string;
-}
-
 export interface SwingScoreInput {
   trend: {
     direction: "bullish" | "bearish" | "sideways" | "transitioning";
@@ -1478,23 +1471,23 @@ export class TechnicalAnalysis {
       resistance_distance_percent: resistanceDistancePercent,
       fibonacci_levels: fibonacciLevels,
       // Add missing properties from StockAnalysis interface
-      llm_opinion: aiSignal.opinion,
-      buy_price: aiSignal.buyPrice,
-      target_price_1: aiSignal.targetPrice1,
-      target_price_2: aiSignal.targetPrice2,
-      stop_loss: aiSignal.stopLoss,
-      holding_period: aiSignal.holdingPeriod,
-      position_size_percent: aiSignal.positionSizePercent,
-      risk_reward_ratio: aiSignal.riskRewardRatio,
-      trading_plan: aiSignal.tradingPlan,
-      key_catalysts: aiSignal.keyCatalysts,
-      risk_factors: aiSignal.riskFactors,
+      llm_opinion: aiSignal.llm_opinion,
+      buy_price: aiSignal.buy_price,
+      target_price_1: aiSignal.target_price_1,
+      target_price_2: aiSignal.target_price_2,
+      stop_loss: aiSignal.stop_loss,
+      holding_period: aiSignal.holding_period,
+      position_size_percent: aiSignal.position_size_percent,
+      risk_reward_ratio: aiSignal.risk_reward_ratio,
+      trading_plan: aiSignal.trading_plan,
+      key_catalysts: aiSignal.key_catalysts,
+      risk_factors: aiSignal.risk_factors,
 
       // Swing Trading Evaluation
-      swing_setup_quality: aiSignal.swingSetupQuality,
-      liquidity_check: aiSignal.liquidityCheck,
-      volatility_check: aiSignal.volatilityCheck,
-      market_trend_alignment: aiSignal.marketTrendAlignment,
+      swing_setup_quality: aiSignal.swing_setup_quality,
+      liquidity_check: aiSignal.liquidity_check,
+      volatility_check: aiSignal.volatility_check,
+      market_trend_alignment: aiSignal.market_trend_alignment,
     };
   }
 }

@@ -108,7 +108,7 @@ export interface SwingTradingIndicators {
 export interface AISignal {
   signal: "strong_buy" | "buy" | "hold" | "sell" | "strong_sell" | "neutral";
   confidence_level: "very_high" | "high" | "moderate" | "low";
-  opinion: string;
+  llm_opinion: string;
   direction: "LONG" | "SHORT" | "NEUTRAL";
   buy_price: number;
   target_price_1: number;

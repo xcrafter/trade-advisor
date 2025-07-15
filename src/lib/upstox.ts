@@ -4,6 +4,7 @@ import {
   type RawCandleData,
   type Quote,
 } from "@/types/upstox";
+import { Redis } from "@upstash/redis";
 
 const UPSTOX_API_URL = "https://api.upstox.com/v3";
 const DEFAULT_CANDLE_DAYS = 60;
@@ -60,6 +61,12 @@ interface QuoteCacheEntry {
   data: Quote;
   timestamp: number;
 }
+
+// Initialize Redis client
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
 
 export class UpstoxAPI {
   private static instance: UpstoxAPI | undefined = undefined;
@@ -135,21 +142,47 @@ export class UpstoxAPI {
   }
 
   /**
+   * Get access token from Redis
+   */
+  private async getAccessToken(): Promise<string> {
+    try {
+      const token = await redis.get("UPSTOX_ACCESS_TOKEN");
+      if (!token) {
+        throw new Error("No access token found in Redis");
+      }
+      return token as string;
+    } catch (error) {
+      console.error(
+        "[UpstoxAPI] Failed to get access token from Redis:",
+        error
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Make the actual API request
    */
   private async makeRequest<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
+    // Get token from Redis instead of environment variable
+    const accessToken = await this.getAccessToken();
+
     const response = await fetch(`${UPSTOX_API_URL}${endpoint}`, {
       ...options,
       headers: {
         ...options.headers,
         Accept: "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
+        Authorization: `Bearer ${accessToken}`,
       },
     });
-    console.log(`${UPSTOX_API_URL}${endpoint}`, this.apiKey, response.status);
+    console.log(
+      `${UPSTOX_API_URL}${endpoint}`,
+      "Using Redis token",
+      response.status
+    );
 
     if (!response.ok) {
       const error = await response

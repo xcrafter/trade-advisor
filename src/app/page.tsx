@@ -66,46 +66,60 @@ export default function Home() {
   }, []);
 
   // Symbol selection (from sidebar) - needs to convert to instrument key
-  const handleSymbolSelect = useCallback(async (stockData: StockData) => {
-    try {
-      // If we have the stock data from the sidebar, use it directly
-      if (stockData) {
-        setSelectedSymbol(stockData.symbol);
-        // Trigger the StockChart to use this data instead of fetching
-        setSelectedInstrumentKey(`SIDEBAR_DATA|${stockData.symbol}`);
-        return;
-      }
+  const handleSymbolSelect = useCallback(
+    async (stockData: StockData | null) => {
+      try {
+        // If we have no stock data, return early
+        if (!stockData) {
+          console.error("No stock data provided");
+          return;
+        }
 
-      // Fallback to API call if somehow we don't have the data
-      const response = await fetch(
-        `/api/upstox/search?q=${stockData.symbol}&limit=1`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        if (data.results && data.results.length > 0) {
-          const instrumentKey = data.results[0].instrument_key;
-          setSelectedInstrumentKey(instrumentKey);
-          setSelectedSymbol(stockData.symbol);
-        } else {
-          console.error("No instrument found for symbol:", stockData.symbol);
+        // Store symbol for use throughout the function
+        const symbol = stockData.symbol;
+
+        try {
+          // Fallback to API call if somehow we don't have the data
+          const response = await fetch(
+            `/api/upstox/search?q=${symbol}&limit=1`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            if (data.results && data.results.length > 0) {
+              const instrumentKey = data.results[0].instrument_key;
+              setSelectedInstrumentKey(instrumentKey);
+              setSelectedSymbol(symbol);
+            } else {
+              console.error("No instrument found for symbol:", symbol);
+              alert(
+                `Unable to find instrument data for ${symbol}. Please try searching for it again.`
+              );
+              setSelectedInstrumentKey(null);
+              setSelectedSymbol(null);
+            }
+          } else {
+            throw new Error("Failed to fetch instrument data");
+          }
+        } catch (error) {
+          console.error("Error finding instrument key for symbol:", error);
           alert(
-            `Unable to find instrument data for ${stockData.symbol}. Please try searching for it again.`
+            `Failed to load ${symbol}. Please check your connection and try again.`
           );
           setSelectedInstrumentKey(null);
           setSelectedSymbol(null);
         }
-      } else {
-        throw new Error("Failed to fetch instrument data");
+
+        setSelectedSymbol(symbol);
+        // Trigger the StockChart to use this data instead of fetching
+        setSelectedInstrumentKey(`SIDEBAR_DATA|${symbol}`);
+      } catch (error) {
+        console.error("Unexpected error:", error);
+        setSelectedInstrumentKey(null);
+        setSelectedSymbol(null);
       }
-    } catch (error) {
-      console.error("Error finding instrument key for symbol:", error);
-      alert(
-        `Failed to load ${stockData.symbol}. Please check your connection and try again.`
-      );
-      setSelectedInstrumentKey(null);
-      setSelectedSymbol(null);
-    }
-  }, []);
+    },
+    []
+  );
 
   // Handle stock deletion
   const handleDeleteStock = useCallback(
