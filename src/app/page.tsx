@@ -7,8 +7,9 @@ import { Navbar } from "@/components/ui/navbar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthModal } from "@/components/auth/AuthModal";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { StockData } from "@/components/RecentStocksSidebar";
+import { validateUpstoxToken, redirectToUpstoxAuth } from "@/lib/upstox";
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -17,6 +18,29 @@ export default function Home() {
     string | null
   >(null);
   const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0);
+  const [isValidatingToken, setIsValidatingToken] = useState(false);
+
+  // Check Upstox token on page load
+  useEffect(() => {
+    async function checkUpstoxToken() {
+      if (!user) return; // Only check token if user is logged in
+      console.log("Checking Upstox token");
+      setIsValidatingToken(true);
+      try {
+        const isValid = await validateUpstoxToken();
+        if (!isValid) {
+          redirectToUpstoxAuth();
+        }
+      } catch (error) {
+        console.error("Failed to validate Upstox token:", error);
+        redirectToUpstoxAuth();
+      } finally {
+        setIsValidatingToken(false);
+      }
+    }
+
+    checkUpstoxToken();
+  }, [user]);
 
   // Direct instrument key selection (from autocomplete)
   const handleStockSelect = useCallback(async (instrumentKey: string) => {
@@ -139,13 +163,15 @@ export default function Home() {
     setSidebarRefreshTrigger((prev) => prev + 1); // Trigger sidebar refresh
   }, []);
 
-  // Show loading screen while checking authentication
-  if (loading) {
+  // Show loading screen while checking authentication or validating token
+  if (loading || isValidatingToken) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+          <p className="text-gray-600">
+            {isValidatingToken ? "Validating Upstox access..." : "Loading..."}
+          </p>
         </div>
       </div>
     );

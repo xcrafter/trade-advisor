@@ -6,7 +6,8 @@ import {
 } from "@/types/upstox";
 import { Redis } from "@upstash/redis";
 
-const UPSTOX_API_URL = "https://api.upstox.com/v3";
+const UPSTOX_API_URL = "https://api.upstox.com/v2";
+const UPSTOX_API_URL_V3 = "https://api.upstox.com/v3";
 const DEFAULT_CANDLE_DAYS = 60;
 const DEFAULT_SKIP_DAYS = 0;
 
@@ -67,6 +68,38 @@ const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL!,
   token: process.env.UPSTASH_REDIS_REST_TOKEN!,
 });
+
+/**
+ * Validate if the Upstox token exists and is valid
+ */
+export async function validateUpstoxToken(): Promise<boolean> {
+  try {
+    console.log("Validating token");
+
+    // Call the validation API endpoint
+    const response = await fetch("/api/upstox/validate-token");
+    if (!response.ok) {
+      console.error(
+        "[UpstoxAPI] Token validation request failed:",
+        response.status
+      );
+      return false;
+    }
+
+    const data = await response.json();
+    return data.isValid;
+  } catch (error) {
+    console.error("[UpstoxAPI] Token validation error:", error);
+    return false;
+  }
+}
+
+/**
+ * Redirect to Upstox auth page
+ */
+export function redirectToUpstoxAuth() {
+  window.location.href = "/api/upstox/auth";
+}
 
 export class UpstoxAPI {
   private static instance: UpstoxAPI | undefined = undefined;
@@ -170,7 +203,7 @@ export class UpstoxAPI {
     // Get token from Redis instead of environment variable
     const accessToken = await this.getAccessToken();
 
-    const response = await fetch(`${UPSTOX_API_URL}${endpoint}`, {
+    const response = await fetch(`${UPSTOX_API_URL_V3}${endpoint}`, {
       ...options,
       headers: {
         ...options.headers,
