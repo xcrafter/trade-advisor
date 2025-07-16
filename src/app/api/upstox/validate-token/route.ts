@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 
 // Initialize Redis client
@@ -9,7 +9,7 @@ const redis = new Redis({
 
 const UPSTOX_API_URL = "https://api.upstox.com/v2";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Get token from Redis
     const token = await redis.get("UPSTOX_ACCESS_TOKEN");
