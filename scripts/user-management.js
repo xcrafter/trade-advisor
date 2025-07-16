@@ -5,7 +5,7 @@ import readline from "readline";
 import dotenv from "dotenv";
 
 // Load environment variables from .env.local
-dotenv.config({ path: ".env.local" });
+dotenv.config({ path: ".env" });
 
 // Initialize Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

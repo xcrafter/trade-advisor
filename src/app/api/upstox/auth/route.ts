@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 
 // Hardcoded redirect URL since this is a temporary setup
-const REDIRECT_URI =
-  "https://archives-paper-dangerous-achievement.trycloudflare.com/api/upstox/auth";
+const REDIRECT_URI = process.env.UPSTOX_REDIRECT_URI!;
 
 // Initialize Redis client
 const redis = new Redis({
