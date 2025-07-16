@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   XAxis,
   YAxis,
@@ -43,6 +43,62 @@ export function StockChart({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastPriceUpdate, setLastPriceUpdate] = useState<Date | null>(null);
+
+  // Calculate MACD values for each point
+  const macdData = useMemo(() => {
+    if (!analysis?.candles) return [];
+
+    const prices = analysis.candles.map((candle) => candle.close);
+
+    // Calculate EMAs for the entire dataset
+    const fastPeriod = 12;
+    const slowPeriod = 26;
+    const signalPeriod = 9;
+
+    // Calculate fast EMA (12-day)
+    const fastEMA: number[] = [];
+    let emaFast = prices[0];
+    const kFast = 2 / (fastPeriod + 1);
+    for (let i = 0; i < prices.length; i++) {
+      emaFast = prices[i] * kFast + emaFast * (1 - kFast);
+      fastEMA.push(emaFast);
+    }
+
+    // Calculate slow EMA (26-day)
+    const slowEMA: number[] = [];
+    let emaSlow = prices[0];
+    const kSlow = 2 / (slowPeriod + 1);
+    for (let i = 0; i < prices.length; i++) {
+      emaSlow = prices[i] * kSlow + emaSlow * (1 - kSlow);
+      slowEMA.push(emaSlow);
+    }
+
+    // Calculate MACD line
+    const macdLine = fastEMA.map((fast, i) => fast - slowEMA[i]);
+
+    // Calculate signal line (9-day EMA of MACD line)
+    const signalLine: number[] = [];
+    let emaSignal = macdLine[0];
+    const kSignal = 2 / (signalPeriod + 1);
+    for (let i = 0; i < macdLine.length; i++) {
+      emaSignal = macdLine[i] * kSignal + emaSignal * (1 - kSignal);
+      signalLine.push(emaSignal);
+    }
+
+    // Calculate histogram
+    const histogram = macdLine.map((macd, i) => macd - signalLine[i]);
+
+    // Combine with candle data
+    const macdPoints = analysis.candles.map((candle, i) => ({
+      ...candle,
+      macd_line: Number(macdLine[i].toFixed(4)),
+      macd_signal: Number(signalLine[i].toFixed(4)),
+      macd_histogram: Number(histogram[i].toFixed(4)),
+    }));
+
+    // Reverse the array to match the main chart's order
+    return macdPoints.reverse();
+  }, [analysis?.candles]);
 
   const fetchLatestPrice = useCallback(async (actualInstrumentKey: string) => {
     try {
@@ -488,16 +544,17 @@ export function StockChart({
             </div>
           </div>
 
-          {/* Trading Plan Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Trading Plan, Technical Indicators, and Risk Analysis Section */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+            {/* Trading Plan */}
             <Card>
-              <CardHeader>
+              <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2">
                   <Target className="h-5 w-5" />
                   Trading Plan
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-6">
                 <div className="space-y-2">
                   <div className="flex justify-between">
                     <span className="text-sm font-medium">Action:</span>
@@ -538,7 +595,7 @@ export function StockChart({
                     </span>
                   </div>
                 </div>
-                <div className="pt-2 border-t">
+                <div className="pt-3 border-t">
                   <div className="flex justify-between">
                     <span className="text-sm font-medium">R:R Ratio:</span>
                     <span className="text-blue-600">
@@ -554,7 +611,7 @@ export function StockChart({
                 </div>
 
                 {/* Swing Trading Evaluation */}
-                <div className="pt-2 border-t">
+                <div className="pt-3 border-t">
                   <h4 className="font-medium mb-2 text-sm">
                     Swing Trading Evaluation
                   </h4>
@@ -587,7 +644,7 @@ export function StockChart({
                 </div>
 
                 {/* Swing Trading Signals */}
-                <div className="pt-2 border-t">
+                <div className="pt-3 border-t">
                   <h4 className="font-medium mb-2 text-sm">
                     Swing Trading Signals
                   </h4>
@@ -831,40 +888,41 @@ export function StockChart({
               </CardContent>
             </Card>
 
+            {/* Technical Indicators */}
             <Card>
-              <CardHeader>
+              <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2">
                   <TrendingUp className="h-5 w-5" />
                   Technical Indicators
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-6">
                 {/* Moving Averages */}
                 <div>
-                  <h4 className="font-medium mb-2 text-sm">Moving Averages</h4>
-                  <div className="space-y-1">
+                  <h4 className="font-medium mb-3 text-sm">Moving Averages</h4>
+                  <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-sm">SMA 50:</span>
                       <span className="text-gray-600">
-                        ₹{analysis.sma_50.toFixed(2)}
+                        ₹{analysis.sma_50?.toFixed(2) || "N/A"}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm">SMA 200:</span>
                       <span className="text-gray-600">
-                        ₹{analysis.sma_200.toFixed(2)}
+                        ₹{analysis.sma_200?.toFixed(2) || "N/A"}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm">EMA 21:</span>
                       <span className="text-gray-600">
-                        ₹{analysis.ema_21.toFixed(2)}
+                        ₹{analysis.ema_21?.toFixed(2) || "N/A"}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm">EMA 50:</span>
                       <span className="text-gray-600">
-                        ₹{analysis.ema_50.toFixed(2)}
+                        ₹{analysis.ema_50?.toFixed(2) || "N/A"}
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -892,8 +950,8 @@ export function StockChart({
 
                 {/* Momentum Indicators */}
                 <div>
-                  <h4 className="font-medium mb-2 text-sm">Momentum</h4>
-                  <div className="space-y-1">
+                  <h4 className="font-medium mb-3 text-sm">Momentum</h4>
+                  <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-sm">RSI (14):</span>
                       <span
@@ -993,38 +1051,39 @@ export function StockChart({
 
                 {/* Volatility & Risk */}
                 <div>
-                  <h4 className="font-medium mb-2 text-sm">
+                  <h4 className="font-medium mb-3 text-sm">
                     Volatility & Risk
                   </h4>
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-sm">ATR (21):</span>
                       <span className="text-gray-600">
-                        {analysis.atr_21.toFixed(2)}
+                        {analysis.atr_21?.toFixed(2) || "N/A"}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm">Bollinger Upper:</span>
                       <span className="text-gray-600">
-                        ₹{analysis.bollinger_upper.toFixed(2)}
+                        ₹{analysis.bollinger_upper?.toFixed(2) || "N/A"}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm">Bollinger Lower:</span>
                       <span className="text-gray-600">
-                        ₹{analysis.bollinger_lower.toFixed(2)}
+                        ₹{analysis.bollinger_lower?.toFixed(2) || "N/A"}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm">Bollinger Position:</span>
                       <Badge variant="outline">
-                        {analysis.bollinger_position.replace("_", " ")}
+                        {analysis.bollinger_position?.replace("_", " ") ||
+                          "N/A"}
                       </Badge>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm">Volatility %ile:</span>
                       <span className="text-gray-600">
-                        {analysis.volatility_percentile.toFixed(1)}%
+                        {analysis.volatility_percentile?.toFixed(1) || "N/A"}%
                       </span>
                     </div>
                   </div>
@@ -1032,8 +1091,8 @@ export function StockChart({
 
                 {/* Volume Analysis */}
                 <div>
-                  <h4 className="font-medium mb-2 text-sm">Volume Analysis</h4>
-                  <div className="space-y-1">
+                  <h4 className="font-medium mb-3 text-sm">Volume Analysis</h4>
+                  <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-sm">Current Volume:</span>
                       <span className="text-gray-600">
@@ -1063,7 +1122,8 @@ export function StockChart({
                     <div className="flex justify-between">
                       <span className="text-sm">Volume Trend:</span>
                       <Badge variant="outline">
-                        {analysis.volume_trend_20day.replace("_", " ")}
+                        {analysis.volume_trend_20day?.replace("_", " ") ||
+                          "N/A"}
                       </Badge>
                     </div>
                     <div className="flex justify-between">
@@ -1081,12 +1141,12 @@ export function StockChart({
 
                 {/* Market Context */}
                 <div>
-                  <h4 className="font-medium mb-2 text-sm">Market Context</h4>
-                  <div className="space-y-1">
+                  <h4 className="font-medium mb-3 text-sm">Market Context</h4>
+                  <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-sm">Market Regime:</span>
                       <Badge variant="outline">
-                        {analysis.market_regime.replace("_", " ")}
+                        {analysis.market_regime?.replace("_", " ") || "N/A"}
                       </Badge>
                     </div>
                     <div className="flex justify-between">
@@ -1098,7 +1158,7 @@ export function StockChart({
                             : "text-red-600"
                         }
                       >
-                        {analysis.sector_performance.toFixed(1)}%
+                        {analysis.sector_performance?.toFixed(1) || "N/A"}%
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -1110,13 +1170,13 @@ export function StockChart({
                             : "text-red-600"
                         }
                       >
-                        {analysis.relative_strength.toFixed(1)}
+                        {analysis.relative_strength?.toFixed(1) || "N/A"}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm">Sector Correlation:</span>
                       <span className="text-gray-600">
-                        {analysis.sector_correlation.toFixed(2)}
+                        {analysis.sector_correlation?.toFixed(2) || "N/A"}
                       </span>
                     </div>
                   </div>
@@ -1124,18 +1184,19 @@ export function StockChart({
               </CardContent>
             </Card>
 
+            {/* Risk & Trend Analysis */}
             <Card>
-              <CardHeader>
+              <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2">
                   <Shield className="h-5 w-5" />
                   Risk & Trend Analysis
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-6">
                 {/* Trend Analysis */}
                 <div>
-                  <h4 className="font-medium mb-2 text-sm">Trend Analysis</h4>
-                  <div className="space-y-1">
+                  <h4 className="font-medium mb-3 text-sm">Trend Analysis</h4>
+                  <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-sm">Trend Direction:</span>
                       <div className="flex items-center gap-1">
@@ -1166,8 +1227,8 @@ export function StockChart({
 
                 {/* Risk Metrics */}
                 <div>
-                  <h4 className="font-medium mb-2 text-sm">Risk Metrics</h4>
-                  <div className="space-y-1">
+                  <h4 className="font-medium mb-3 text-sm">Risk Metrics</h4>
+                  <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-sm">Volatility Rating:</span>
                       <Badge variant="outline">
@@ -1181,25 +1242,28 @@ export function StockChart({
                     <div className="flex justify-between">
                       <span className="text-sm">Nearest Support:</span>
                       <span className="text-green-600">
-                        ₹{analysis.nearest_support.toFixed(2)}
+                        ₹{analysis.nearest_support?.toFixed(2) || "N/A"}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm">Support Distance:</span>
                       <span className="text-gray-600">
-                        {analysis.support_distance_percent.toFixed(1)}%
+                        {analysis.support_distance_percent?.toFixed(1) || "N/A"}
+                        %
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm">Nearest Resistance:</span>
                       <span className="text-red-600">
-                        ₹{analysis.nearest_resistance.toFixed(2)}
+                        ₹{analysis.nearest_resistance?.toFixed(2) || "N/A"}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm">Resistance Distance:</span>
                       <span className="text-gray-600">
-                        {analysis.resistance_distance_percent.toFixed(1)}%
+                        {analysis.resistance_distance_percent?.toFixed(1) ||
+                          "N/A"}
+                        %
                       </span>
                     </div>
                   </div>
@@ -1207,33 +1271,44 @@ export function StockChart({
 
                 {/* Price Ranges */}
                 <div>
-                  <h4 className="font-medium mb-2 text-sm">Price Ranges</h4>
-                  <div className="space-y-1">
+                  <h4 className="font-medium mb-3 text-sm">Price Ranges</h4>
+                  <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-sm">3-Day Range:</span>
                       <span className="text-gray-600">
-                        ₹{analysis.price_ranges.day_3.low.toFixed(2)} - ₹
-                        {analysis.price_ranges.day_3.high.toFixed(2)}
+                        ₹
+                        {analysis.price_ranges?.day_3?.low?.toFixed(2) || "N/A"}{" "}
+                        - ₹
+                        {analysis.price_ranges?.day_3?.high?.toFixed(2) ||
+                          "N/A"}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm">10-Day Range:</span>
                       <span className="text-gray-600">
-                        ₹{analysis.price_ranges.day_10.low.toFixed(2)} - ₹
-                        {analysis.price_ranges.day_10.high.toFixed(2)}
+                        ₹
+                        {analysis.price_ranges?.day_10?.low?.toFixed(2) ||
+                          "N/A"}{" "}
+                        - ₹
+                        {analysis.price_ranges?.day_10?.high?.toFixed(2) ||
+                          "N/A"}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm">30-Day Range:</span>
                       <span className="text-gray-600">
-                        ₹{analysis.price_ranges.day_30.low.toFixed(2)} - ₹
-                        {analysis.price_ranges.day_30.high.toFixed(2)}
+                        ₹
+                        {analysis.price_ranges?.day_30?.low?.toFixed(2) ||
+                          "N/A"}{" "}
+                        - ₹
+                        {analysis.price_ranges?.day_30?.high?.toFixed(2) ||
+                          "N/A"}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm">Weekly Pivot:</span>
                       <span className="text-blue-600">
-                        ₹{analysis.weekly_pivot.toFixed(2)}
+                        ₹{analysis.weekly_pivot?.toFixed(2) || "N/A"}
                       </span>
                     </div>
                   </div>
@@ -1241,8 +1316,8 @@ export function StockChart({
 
                 {/* Additional Info */}
                 <div>
-                  <h4 className="font-medium mb-2 text-sm">Additional Info</h4>
-                  <div className="space-y-1">
+                  <h4 className="font-medium mb-3 text-sm">Additional Info</h4>
+                  <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-sm">Holding Period:</span>
                       <Badge variant="outline">
@@ -1271,9 +1346,9 @@ export function StockChart({
           </div>
 
           {/* AI Analysis Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <Card>
-              <CardHeader>
+              <CardHeader className="pb-3">
                 <CardTitle>AI Opinion</CardTitle>
               </CardHeader>
               <CardContent>
@@ -1284,7 +1359,7 @@ export function StockChart({
             </Card>
 
             <Card>
-              <CardHeader>
+              <CardHeader className="pb-3">
                 <CardTitle>Trading Plan Details</CardTitle>
               </CardHeader>
               <CardContent>
@@ -1297,29 +1372,34 @@ export function StockChart({
 
           {/* Support & Resistance */}
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-3">
               <CardTitle>Support & Resistance Levels</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div>
-                  <h4 className="font-medium mb-2">Support Levels</h4>
-                  <div className="space-y-1">
-                    {analysis.support_levels.slice(0, 3).map((level, index) => (
-                      <div key={index} className="flex justify-between text-sm">
-                        <span>S{index + 1}:</span>
-                        <span className="text-green-600">
-                          ₹{level.toFixed(2)}
-                        </span>
-                      </div>
-                    ))}
+                  <h4 className="font-medium mb-3">Support Levels</h4>
+                  <div className="space-y-2">
+                    {analysis.support_levels
+                      ?.slice(0, 3)
+                      .map((level, index) => (
+                        <div
+                          key={index}
+                          className="flex justify-between text-sm"
+                        >
+                          <span>S{index + 1}:</span>
+                          <span className="text-green-600">
+                            ₹{level.toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
                   </div>
                 </div>
                 <div>
-                  <h4 className="font-medium mb-2">Resistance Levels</h4>
-                  <div className="space-y-1">
+                  <h4 className="font-medium mb-3">Resistance Levels</h4>
+                  <div className="space-y-2">
                     {analysis.resistance_levels
-                      .slice(0, 3)
+                      ?.slice(0, 3)
                       .map((level, index) => (
                         <div
                           key={index}
@@ -1482,8 +1562,59 @@ export function StockChart({
             </CardContent>
           </Card>
 
+          {/* MACD Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle>MACD Chart</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[400px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart
+                    data={macdData}
+                    margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="timestamp"
+                      tickFormatter={(timestamp) => format(timestamp, "MMM dd")}
+                    />
+                    <YAxis />
+                    <Tooltip
+                      formatter={(value: number) => value.toFixed(3)}
+                      labelFormatter={(timestamp) =>
+                        format(timestamp, "MMM dd, yyyy")
+                      }
+                    />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="macd_line"
+                      stroke="#2563eb"
+                      name="MACD"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="macd_signal"
+                      stroke="#dc2626"
+                      name="Signal"
+                      dot={false}
+                    />
+                    <Bar
+                      dataKey="macd_histogram"
+                      fill="#22c55e"
+                      name="Histogram"
+                    />
+                    <ReferenceLine y={0} stroke="#666" strokeDasharray="3 3" />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Risk Factors & Catalysts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
