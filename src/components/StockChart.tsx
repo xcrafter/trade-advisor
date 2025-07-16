@@ -554,8 +554,8 @@ export function StockChart({
                   Trading Plan
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-2">
+              <CardContent className="space-y-4">
+                <div className="space-y-1">
                   <div className="flex justify-between">
                     <span className="text-sm font-medium">Action:</span>
                     <span
@@ -595,7 +595,7 @@ export function StockChart({
                     </span>
                   </div>
                 </div>
-                <div className="pt-3 border-t">
+                <div className="pt-2 border-t space-y-1">
                   <div className="flex justify-between">
                     <span className="text-sm font-medium">R:R Ratio:</span>
                     <span className="text-blue-600">
